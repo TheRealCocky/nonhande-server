@@ -1,6 +1,9 @@
 # Estágio de Build
 FROM node:20-alpine AS build
 
+# INSTALAR DEPENDÊNCIAS DO SISTEMA (OpenSSL e libc)
+RUN apk add --no-cache openssl openssl-dev libc6-compat
+
 WORKDIR /app
 
 COPY package*.json ./
@@ -15,6 +18,9 @@ RUN npm run build
 
 # Estágio de Produção
 FROM node:20-alpine
+
+# INSTALAR DEPENDÊNCIAS NO RUNTIME TAMBÉM
+RUN apk add --no-cache openssl libc6-compat
 
 WORKDIR /app
 
