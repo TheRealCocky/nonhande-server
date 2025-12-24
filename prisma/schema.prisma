@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// --- UTILIZADORES ---
+model User {
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String  @unique
+  password  String?
+  provider  String  @default("credentials")
+  googleId  String? @unique
+  avatarUrl String?
+  bio       String?
+  role      Role    @default(STUDENT)
+
+  // NOVOS CAMPOS PARA SEGURANÇA REAL
+  isVerified       Boolean @default(false) // Começa como falso até validar email
+  verificationCode String? // Onde guardamos o código temporário
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relações
+  progress Progress[]
+  calls    Call[]     @relation("UserCalls")
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+// --- DICIONÁRIO ---
+model Word {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  term            String // Palavra em Nhaneca
+  meaning         String // Tradução/Significado
+  category        String // Ex: Família, Natureza, Verbo
+  grammaticalType String? // Ex: Substantivo, Adjetivo
+  audioUrl        String?
+  phonetic        String?
+  duration        Float?
+  culturalNote    String?
+  tags            String[]
+
+  // Relações
+  examples  Example[]
+  progress  Progress[]
+  createdAt DateTime   @default(now())
+}
+
+model Example {
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  text        String // Frase em Nhaneca
+  translation String // Tradução da frase
+  audioUrl    String?
+
+  wordId String @db.ObjectId
+  word   Word   @relation(fields: [wordId], references: [id], onDelete: Cascade)
+}
+
+// --- APRENDIZAGEM E GAMIFICAÇÃO ---
+model Progress {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  wordId     String   @db.ObjectId
+  level      Int      @default(0) // Nível de memorização
+  mastered   Boolean  @default(false)
+  lastReview DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  word Word @relation(fields: [wordId], references: [id])
+}
+
+// --- COMUNICAÇÃO (CHAMADAS) ---
+model Call {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  callerId  String    @db.ObjectId
+  calleeId  String    @db.ObjectId
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  user User @relation("UserCalls", fields: [callerId], references: [id])
+}
