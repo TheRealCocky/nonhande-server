@@ -13,24 +13,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check files (Debug)
+        run: ls -R # Isto vai imprimir no log todas as pastas para tirarmos a teima
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install Dependencies
-        run: |
-          cd server
-          npm install
+        run: npm install
 
       - name: Run Prisma Generate
-        run: |
-          cd server
-          npx prisma generate
+        run: npx prisma generate
         env:
           DATABASE_URL: "mongodb://localhost:27017/unused"
 
       - name: Build
-        run: |
-          cd server
-          npm run build
+        run: npm run build
