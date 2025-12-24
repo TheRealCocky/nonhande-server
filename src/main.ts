@@ -5,23 +5,29 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Configuração de CORS (Essencial para o teu futuro Frontend conseguir conectar)
-  app.enableCors();
+  // Puxamos a URL do .env ou usamos o localhost como fallback (plano B)
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-  // Ativa a validação automática para todos os DTOs
+  app.enableCors({
+    origin: [
+      frontendUrl,
+      'http://localhost:3000',
+    ],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+  });
+
   app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,            // Remove campos que não estão no DTO
-    forbidNonWhitelisted: true, // Dá erro se enviarem campos a mais
-    transform: true,            // Converte tipos automaticamente
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
   }));
 
-  // Porta definida pelo Render ou 3001 para desenvolvimento local
   const port = process.env.PORT || 3001;
 
-  // No Docker/Render, é obrigatório usar '0.0.0.0' para aceitar conexões externas
   await app.listen(port, '0.0.0.0');
 
-  console.log(`🚀 Nonhande Backend is running on: http://localhost:${port}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🚀 Nonhande Backend is running`);
+  console.log(`📡 Allowing CORS for: ${frontendUrl}`);
 }
 bootstrap();
