@@ -5,7 +5,6 @@ import {
   Body,
   UseGuards,
   Req,
-  Res,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from '../services/auth.service';
@@ -17,9 +16,8 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   /**
-   * REGISTO MANUAL
-   * Rota: POST /auth/signup
-   * Valida se o email é verdadeiro e a senha tem +6 caracteres
+   * REGISTO DE UTILIZADOR
+   * POST /auth/signup
    */
   @Post('signup')
   async signup(@Body() createUserDto: CreateUserDto) {
@@ -27,9 +25,8 @@ export class AuthController {
   }
 
   /**
-   * LOGIN MANUAL
-   * Rota: POST /auth/login
-   * Usa o LoginDto para validar o formato dos dados antes de autenticar
+   * LOGIN DE UTILIZADOR
+   * POST /auth/login
    */
   @Post('login')
   async login(@Body() loginDto: LoginDto) {
@@ -37,29 +34,34 @@ export class AuthController {
   }
 
   /**
-   * LOGIN VIA GOOGLE (INÍCIO)
-   * Rota: GET /auth/google
-   * Redireciona o utilizador para a página de consentimento do Google
+   * VERIFICAÇÃO DE CONTA (CÓDIGO OTP)
+   * POST /auth/verify-code
+   * Este endpoint recebe o e-mail e o código de 6 dígitos enviado.
+   */
+  @Post('verify-code')
+  async verify(@Body() body: { email: string; code: string }) {
+    // Chama o método verifyAccount que existe no teu AuthService
+    return this.authService.verifyAccount(body.email, body.code);
+  }
+
+  /**
+   * AUTENTICAÇÃO GOOGLE
+   * GET /auth/google
    */
   @Get('google')
   @UseGuards(AuthGuard('google'))
   async googleAuth(@Req() req) {
-    // O NestJS e o Passport tratam do redirecionamento automaticamente
+    // O Passport trata do redirecionamento para o Google
   }
-  @Post('verify')
-  async verify(@Body() body: { email: string; code: string }) {
-    // Chamamos o serviço passando o email e o código que o utilizador recebeu
-    return this.authService.verifyAccount(body.email, body.code);
-  }
+
   /**
-   * GOOGLE CALLBACK (RETORNO)
-   * Rota: GET /auth/google/callback
-   * O Google envia os dados do utilizador para aqui após a autorização
+   * CALLBACK DO GOOGLE
+   * GET /auth/google/callback
    */
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleAuthRedirect(@Req() req) {
-    // req.user contém os dados validados pela GoogleStrategy
+    // req.user contém os dados validados pelo GoogleStrategy
     return this.authService.googleLogin(req.user);
   }
 }
