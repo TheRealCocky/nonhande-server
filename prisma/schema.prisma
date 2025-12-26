@@ -39,21 +39,34 @@ enum Role {
 
 // --- DICIONÁRIO ---
 model Word {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  term            String // Palavra em Nhaneca
-  meaning         String // Tradução/Significado
-  category        String // Ex: Família, Natureza, Verbo
-  grammaticalType String? // Ex: Substantivo, Adjetivo
-  audioUrl        String?
-  phonetic        String?
-  duration        Float?
-  culturalNote    String?
-  tags            String[]
+  id      String @id @default(auto()) @map("_id") @db.ObjectId
+  term    String // Palavra na língua original (ex: Ombia)
+  meaning String // Tradução/Significado em Português
+
+  // O campo que vai permitir o Nonhande crescer para outras províncias
+  language String @default("Nhaneca-Humbe") // Ex: Umbundu, Kimbundu, Cokwe
+
+  category        String // Ex: Família, Natureza, Verbo, Casa
+  grammaticalType String? // Ex: Substantivo, Adjetivo, Verbo
+
+  // Ficheiros multimédia (Supabase Storage)
+  audioUrl String? // Pronúncia nativa
+  imageUrl String? // Ilustração do termo (Dataset visual)
+
+  phonetic     String? // Representação fonética
+  duration     Float? // Duração do áudio em segundos (útil para o player)
+  culturalNote String? // Contexto histórico ou regional do uso da palavra
+
+  // Metadados para busca avançada
+  tags     String[]
+  synonyms String[] // Sinónimos na mesma língua nacional
 
   // Relações
-  examples  Example[]
-  progress  Progress[]
-  createdAt DateTime   @default(now())
+  examples Example[] // Frases de exemplo
+  progress Progress[] // Progresso de aprendizagem dos utilizadores
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Example {
