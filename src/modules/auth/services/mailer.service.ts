@@ -1,52 +1,40 @@
 import { Injectable } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailerService {
-  private transporter;
-
-  constructor() {
-    this.transporter = nodemailer.createTransport({
-      host: process.env.MAIL_HOST || 'smtp.gmail.com',
-      port: Number(process.env.MAIL_PORT) || 587,
-      secure: false, // Forçamos false para a 587
-      auth: {
-        user: process.env.MAIL_USER,
-        pass: process.env.MAIL_PASS,
-      },
-      // CONFIGURAÇÕES DE EMERGÊNCIA
-      name: 'smtp.gmail.com', // Força o nome do servidor no HELO
-      tls: {
-        rejectUnauthorized: false,
-        minVersion: 'TLSv1.2'
-      },
-      connectionTimeout: 30000, // 30 segundos
-      greetingTimeout: 30000,
-      socketTimeout: 30000,
-    });
-
-    this.transporter.verify((error) => {
-      if (error) {
-        console.error('❌ Erro SMTP:', error);
-      } else {
-        console.log('✅ SMTP Pronto');
-      }
-    });
-  }
+  private readonly resendUrl = 'https://api.resend.com/emails';
+  private readonly apiKey = process.env.RESEND_API_KEY;
 
   async sendVerificationEmail(email: string, code: string) {
-    const mailOptions = {
-      from: process.env.MAIL_FROM || `"Nonhande" <${process.env.MAIL_USER}>`,
-      to: email,
-      subject: `Código: ${code}`,
-      html: `<h1>Código de Ativação: ${code}</h1>`,
-    };
-
     try {
-      await this.transporter.sendMail(mailOptions);
-      console.log('📧 E-mail enviado');
+      const response = await fetch(this.resendUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: 'Nonhande <onboarding@resend.dev>', // Por agora usa este remetente padrão
+          to: email,
+          subject: `Código de Ativação: ${code}`,
+          html: `
+            <div style="font-family: sans-serif; text-align: center; background: #0d0d0d; color: #fff; padding: 20px;">
+              <h1 style="color: #f6c83d;">Nonhande</h1>
+              <p>O teu código de verificação é:</p>
+              <h2 style="letter-spacing: 5px; background: #222; padding: 10px;">${code}</h2>
+            </div>
+          `,
+        }),
+      });
+
+      if (response.ok) {
+        console.log('📧 E-mail enviado via Resend!');
+      } else {
+        const errorData = await response.json();
+        console.error('❌ Erro no Resend:', errorData);
+      }
     } catch (error) {
-      console.error('❌ Falha no envio:', error);
+      console.error('❌ Falha ao conectar com Resend:', error);
     }
   }
 }
