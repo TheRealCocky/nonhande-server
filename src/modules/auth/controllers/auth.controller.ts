@@ -60,9 +60,17 @@ export class AuthController {
    */
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
-  googleAuthRedirect(@Req() req, @Res() res) {
-    const token = req.user.access_token;
-    // Redireciona para a Vercel com o token
+  async googleAuthRedirect(@Req() req, @Res() res) {
+    // 1. O Passport coloca os dados do Google em req.user
+    const googleUser = req.user;
+
+    // 2. CHAMA O SERVICE para criar/encontrar o user e gerar o JWT
+    const authData = await this.authService.googleLogin(googleUser);
+
+    // 3. PEGA O TOKEN (No teu service a chave é accessToken)
+    const token = authData.accessToken;
+
+    // 4. REDIRECIONA PARA A VERCEL
     return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
   }
 }
