@@ -8,17 +8,21 @@ export class MailerService {
   constructor() {
     this.transporter = nodemailer.createTransport({
       host: process.env.MAIL_HOST || 'smtp.gmail.com',
-      port: Number(process.env.MAIL_PORT) || 587, // Mudamos para 587
-      secure: process.env.MAIL_SECURE === 'true', // No Render será false para a 587
+      port: Number(process.env.MAIL_PORT) || 587,
+      secure: false, // Forçamos false para a 587
       auth: {
         user: process.env.MAIL_USER,
         pass: process.env.MAIL_PASS,
       },
+      // CONFIGURAÇÕES DE EMERGÊNCIA
+      name: 'smtp.gmail.com', // Força o nome do servidor no HELO
       tls: {
-        rejectUnauthorized: false // Ajuda a evitar bloqueios de certificado em cloud
+        rejectUnauthorized: false,
+        minVersion: 'TLSv1.2'
       },
-      connectionTimeout: 20000, // Aumentamos para 20s
-      greetingTimeout: 20000,
+      connectionTimeout: 30000, // 30 segundos
+      greetingTimeout: 30000,
+      socketTimeout: 30000,
     });
 
     this.transporter.verify((error) => {
@@ -35,7 +39,7 @@ export class MailerService {
       from: process.env.MAIL_FROM || `"Nonhande" <${process.env.MAIL_USER}>`,
       to: email,
       subject: `Código: ${code}`,
-      html: `<h1>Código: ${code}</h1>`,
+      html: `<h1>Código de Ativação: ${code}</h1>`,
     };
 
     try {
