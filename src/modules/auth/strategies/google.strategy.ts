@@ -12,13 +12,15 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     super({
       clientID: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      // FORÇA MANUALMENTE APENAS PARA TESTE
-      callbackURL: 'http://localhost:3001/auth/google/callback',
+      // REMOVE O LOCALHOST MANUAL E USA A VARIÁVEL:
+      callbackURL: process.env.GOOGLE_CALLBACK_URL,
       scope: ['email', 'profile'],
     });
 
-    // Este log vai aparecer no teu terminal assim que o Nest iniciar
-    console.log("🛠️ Callback configurada no código:", 'http://localhost:3001/auth/google/callback');
+    console.log(
+      '🚀 Callback configurada via ENV:',
+      process.env.GOOGLE_CALLBACK_URL,
+    );
   }
 
   async validate(

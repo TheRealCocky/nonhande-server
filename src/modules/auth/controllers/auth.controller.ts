@@ -60,30 +60,9 @@ export class AuthController {
    */
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
-  async googleAuthRedirect(@Req() req, @Res() res) {
-    try {
-      // 1. O utilizador validado pelo Google está aqui
-      const user = req.user;
-
-      if (!user) {
-        return res.redirect('https://nonhande.vercel.app/login?error=auth_failed');
-      }
-
-      // 2. Definir para onde enviar o utilizador (Vercel ou Localhost)
-      // O NestJS deteta o ambiente pela variável NODE_ENV
-      const frontendUrl = process.env.NODE_ENV === 'production'
-        ? 'https://nonhande.vercel.app'
-        : 'http://localhost:3000';
-
-      // 3. Por agora, vamos apenas redirecionar com um parâmetro de sucesso
-      // No futuro, aqui enviarás o Token JWT: `${frontendUrl}?token=${token}`
-      console.log(`✅ Google Login Sucesso: ${user.email}`);
-
-      return res.redirect(`${frontendUrl}/?login=success`);
-
-    } catch (error) {
-      console.error('❌ Erro no redirecionamento Google:', error);
-      return res.redirect('https://nonhande.vercel.app/login?error=server_error');
-    }
+  googleAuthRedirect(@Req() req, @Res() res) {
+    const token = req.user.access_token;
+    // Redireciona para a Vercel com o token
+    return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
   }
 }
