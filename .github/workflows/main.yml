@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-test: # Mudamos o nome para refletir o processo completo
+  build-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,29 +17,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm' # Ativa cache para builds mais rápidos
+          cache: 'npm'
 
       - name: Install Dependencies
-        run: npm ci # 'npm ci' é mais rápido e seguro em CI que o 'npm install'
+        run: npm ci
 
       - name: Lint Check
-        run: npm run lint # Garante que o código está limpo e organizado
+        run: npm run lint
 
       - name: Run Prisma Generate
         run: npx prisma generate
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL_TEST }} # Usa um Secret para segurança
+          DATABASE_URL: ${{ secrets.DATABASE_URL_TEST }}
 
       - name: Run Tests
-          run: npm run test -- --passWithNoTests
-          env:
-            DATABASE_URL: ${{ secrets.DATABASE_URL_TEST }}
-            JWT_SECRET: "test-secret"
+        run: npm run test -- --passWithNoTests
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_TEST }}
+          JWT_SECRET: "test-secret"
 
       - name: Build
         run: npm run build
 
-      # Opcional: Upload do artefato de build (útil para o Deploy depois)
       - name: Upload Build
         uses: actions/upload-artifact@v4
         with:
