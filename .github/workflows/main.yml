@@ -7,27 +7,41 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  build-and-test: # Mudamos o nome para refletir o processo completo
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check files (Debug)
-        run: ls -R # Isto vai imprimir no log todas as pastas para tirarmos a teima
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm' # Ativa cache para builds mais rápidos
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci # 'npm ci' é mais rápido e seguro em CI que o 'npm install'
+
+      - name: Lint Check
+        run: npm run lint # Garante que o código está limpo e organizado
 
       - name: Run Prisma Generate
         run: npx prisma generate
         env:
-          DATABASE_URL: "mongodb://localhost:27017/unused"
+          DATABASE_URL: ${{ secrets.DATABASE_URL_TEST }} # Usa um Secret para segurança
+
+      - name: Run Tests
+        run: npm run test # ESSENCIAL: Garante que os teus Guards e Services funcionam
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_TEST }}
+          JWT_SECRET: "test-secret"
 
       - name: Build
         run: npm run build
+
+      # Opcional: Upload do artefato de build (útil para o Deploy depois)
+      - name: Upload Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-files
+          path: dist/
