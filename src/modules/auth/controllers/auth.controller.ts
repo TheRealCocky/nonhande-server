@@ -96,8 +96,13 @@ export class AuthController {
   async googleAuthRedirect(@Req() req, @Res() res) {
     const googleUser = req.user;
     const authData = await this.authService.googleLogin(googleUser);
-    const token = authData.accessToken;
 
-    return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
+    const token = authData.accessToken;
+    const role = authData.user.role; // Pegamos o role que vem do service
+
+    // Enviamos AMBOS na URL
+    return res.redirect(
+      `${process.env.FRONTEND_URL}/auth/callback?token=${token}&role=${role}`
+    );
   }
 }
