@@ -29,6 +29,9 @@ export class AuthController {
    * 🛡️ CRIAÇÃO INTERNA SEGURA (ADMIN / TEACHER)
    * Apenas acessível via Postman com a chave secreta no Header
    */
+  /**
+   * 🛡️ CRIAÇÃO INTERNA SEGURA (ADMIN / TEACHER)
+   */
   @Post('create-internal-user')
   async createInternal(
     @Body() createUserDto: CreateUserDto,
@@ -36,15 +39,10 @@ export class AuthController {
   ) {
     const secret = process.env.ADMIN_CREATION_SECRET;
 
-    // --- CÓDIGO DE TESTE TEMPORÁRIO ---
+    // Voltamos à validação simples e segura
     if (!adminSecret || adminSecret !== secret) {
-      throw new UnauthorizedException({
-        message: 'Chave inválida',
-        enviadoPeloPostman: adminSecret || 'nada',
-        armazenadoNoServidor: secret || 'ESTÁ VAZIO NO RENDER'
-      });
+      throw new UnauthorizedException('Chave secreta inválida ou ausente.');
     }
-    // ----------------------------------
 
     return this.authService.signupInternal(createUserDto);
   }
