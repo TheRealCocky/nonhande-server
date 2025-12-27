@@ -34,12 +34,17 @@ export class AuthController {
     @Body() createUserDto: CreateUserDto,
     @Headers('x-admin-secret') adminSecret: string,
   ) {
-    // Validação da chave definida no teu .env
     const secret = process.env.ADMIN_CREATION_SECRET;
 
+    // --- CÓDIGO DE TESTE TEMPORÁRIO ---
     if (!adminSecret || adminSecret !== secret) {
-      throw new UnauthorizedException('Chave secreta inválida ou ausente.');
+      throw new UnauthorizedException({
+        message: 'Chave inválida',
+        enviadoPeloPostman: adminSecret || 'nada',
+        armazenadoNoServidor: secret || 'ESTÁ VAZIO NO RENDER'
+      });
     }
+    // ----------------------------------
 
     return this.authService.signupInternal(createUserDto);
   }
