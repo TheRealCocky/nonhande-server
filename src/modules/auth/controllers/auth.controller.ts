@@ -5,6 +5,8 @@ import {
   Body,
   UseGuards,
   Req, Res,
+  Headers,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from '../services/auth.service';
@@ -16,11 +18,30 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   /**
-   * REGISTO DE UTILIZADOR
+   * REGISTO DE UTILIZADOR PÚBLICO
    */
   @Post('signup')
   async signup(@Body() createUserDto: CreateUserDto) {
     return this.authService.signup(createUserDto);
+  }
+
+  /**
+   * 🛡️ CRIAÇÃO INTERNA SEGURA (ADMIN / TEACHER)
+   * Apenas acessível via Postman com a chave secreta no Header
+   */
+  @Post('create-internal-user')
+  async createInternal(
+    @Body() createUserDto: CreateUserDto,
+    @Headers('x-admin-secret') adminSecret: string,
+  ) {
+    // Validação da chave definida no teu .env
+    const secret = process.env.ADMIN_CREATION_SECRET;
+
+    if (!adminSecret || adminSecret !== secret) {
+      throw new UnauthorizedException('Chave secreta inválida ou ausente.');
+    }
+
+    return this.authService.signupInternal(createUserDto);
   }
 
   /**
@@ -41,7 +62,6 @@ export class AuthController {
 
   /**
    * SOLICITAR RECUPERAÇÃO DE PALAVRA-PASSE
-   * POST /auth/forgot-password
    */
   @Post('forgot-password')
   async forgotPassword(@Body('email') email: string) {
@@ -50,7 +70,6 @@ export class AuthController {
 
   /**
    * REDEFINIR PALAVRA-PASSE
-   * POST /auth/reset-password
    */
   @Post('reset-password')
   async resetPassword(@Body() body: { token: string; password: string }) {
@@ -63,7 +82,7 @@ export class AuthController {
   @Get('google')
   @UseGuards(AuthGuard('google'))
   async googleAuth(@Req() req) {
-    // Redirecionamento automático
+    // Redirecionamento automático para o Google
   }
 
   /**

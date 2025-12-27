@@ -58,11 +58,12 @@ export class DictionaryService {
             language: data.language || 'Nhaneca-Humbe',
             grammaticalType: data.grammaticalType,
             culturalNote: data.culturalNote,
-            tags: tagsData, // Incluído conforme o teu DTO
+            tags: tagsData,
             audioUrl,
             imageUrl,
             examples: {
-              create: examplesData.map((ex: any) => ({
+              // 💡 AQUI: Definimos a interface do objeto que vem do JSON.parse
+              create: examplesData.map((ex: { text: string; translation: string }) => ({
                 text: ex.text,
                 translation: ex.translation,
               })),

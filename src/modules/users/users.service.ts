@@ -1,41 +1,41 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateUserDto } from './dto/create-user.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  // PROCURAR POR EMAIL
+  /**
+   * PROCURAR POR EMAIL
+   */
   async findByEmail(email: string) {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
-  // CRIAR UTILIZADOR (Signup Manual)
-  async create(data: CreateUserDto & { verificationCode?: string }) {
+  /**
+   * CRIAR UTILIZADOR (Versão Flexível)
+   * Usa Prisma.UserCreateInput para aceitar isVerified e Role vindos do AuthService
+   */
+  async create(data: Prisma.UserCreateInput) {
     return this.prisma.user.create({
-      data: {
-        email: data.email,
-        name: data.name,
-        password: data.password,
-        avatarUrl: data.avatarUrl,
-        provider: data.provider || 'credentials',
-        role: (data.role as any) || 'STUDENT',
-        verificationCode: data.verificationCode,
-        isVerified: false, // Inicia como falso para registos manuais
-      },
+      data: data, // Agora ele aceita tudo: Role, isVerified, etc.
     });
   }
 
-  // ATUALIZAR UTILIZADOR (Necessário para a verificação do código OTP)
-  async update(id: string, data: any) {
+  /**
+   * ATUALIZAR UTILIZADOR
+   */
+  async update(id: string, data: Prisma.UserUpdateInput) {
     return this.prisma.user.update({
       where: { id },
       data: data,
     });
   }
 
-  // LOGIN SOCIAL (Google)
+  /**
+   * LOGIN SOCIAL (Google)
+   */
   async findOrCreateGoogleUser(userData: any) {
     let user = await this.findByEmail(userData.email);
 

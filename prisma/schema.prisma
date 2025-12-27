@@ -14,7 +14,7 @@ model User {
   email     String  @unique
   password  String?
   provider  String  @default("credentials")
-  googleId  String? @unique
+  googleId  String?
   avatarUrl String?
   bio       String?
   role      Role    @default(STUDENT)
