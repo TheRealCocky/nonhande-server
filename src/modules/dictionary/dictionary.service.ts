@@ -1,9 +1,13 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { createClient } from '@supabase/supabase-js';
 import { CreateWordDto } from './dto/create-word.dto';
-import { from, Observable, throwError, of } from 'rxjs';
-import { catchError, switchMap, map } from 'rxjs/operators';
+import { from, Observable, throwError } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
 
 @Injectable()
 export class DictionaryService {
@@ -12,7 +16,8 @@ export class DictionaryService {
     process.env.SUPABASE_SECRET_KEY || '',
   );
 
-  private readonly bucketName = process.env.SUPABASE_BUCKET || 'Nonhande_dataset';
+  private readonly bucketName =
+    process.env.SUPABASE_BUCKET || 'Nonhande_dataset';
 
   constructor(private prisma: PrismaService) {}
 
@@ -24,36 +29,59 @@ export class DictionaryService {
     audioFile?: Express.Multer.File,
     imageFile?: Express.Multer.File,
   ): Observable<any> {
-    return from(this.prisma.word.findFirst({
-      where: { term: { equals: data.term, mode: 'insensitive' } }
-    })).pipe(
-      switchMap(existingWord => {
+    return from(
+      this.prisma.word.findFirst({
+        where: { term: { equals: data.term, mode: 'insensitive' } },
+      }),
+    ).pipe(
+      switchMap((existingWord) => {
         if (existingWord) {
-          throw new BadRequestException(`O termo "${data.term}" já existe no dicionário.`);
+          throw new BadRequestException(
+            `O termo "${data.term}" já existe no dicionário.`,
+          );
         }
 
         return from(this.handleFiles(audioFile, imageFile)).pipe(
           switchMap(({ audioUrl, imageUrl }) => {
             const examplesData = data.examples ? JSON.parse(data.examples) : [];
 
-            return from(this.prisma.word.create({
-              data: {
-                ...data,
-                audioUrl,
-                imageUrl,
-                examples: {
-                  create: examplesData.map((ex: { text: string; translation: string }) => ({
-                    text: ex.text,
-                    translation: ex.translation,
-                  })),
+            // Tratamento de tags para criação
+            const rawTags = data.tags as unknown;
+            const tagsData =
+              typeof rawTags === 'string'
+                ? rawTags.split(',').map((t) => t.trim())
+                : (rawTags as string[]);
+
+            return from(
+              this.prisma.word.create({
+                data: {
+                  ...data,
+                  tags: tagsData || [],
+                  audioUrl,
+                  imageUrl,
+                  examples: {
+                    create: examplesData.map(
+                      (ex: { text: string; translation: string }) => ({
+                        text: ex.text,
+                        translation: ex.translation,
+                      }),
+                    ),
+                  },
                 },
-              },
-              include: { examples: true },
-            }));
-          })
+                include: { examples: true },
+              }),
+            );
+          }),
         );
       }),
-      catchError(err => throwError(() => err instanceof BadRequestException ? err : new BadRequestException(err.message)))
+      catchError((err) =>
+        throwError(
+          () =>
+            err instanceof BadRequestException
+              ? err
+              : new BadRequestException(err.message),
+        ),
+      ),
     );
   }
 
@@ -66,35 +94,58 @@ export class DictionaryService {
     audioFile?: Express.Multer.File,
     imageFile?: Express.Multer.File,
   ) {
-    const existingWord = await this.prisma.word.findUnique({ where: { id } });
-    if (!existingWord) throw new NotFoundException('Palavra não encontrada');
+    try {
+      const existingWord = await this.prisma.word.findUnique({ where: { id } });
+      if (!existingWord) throw new NotFoundException('Palavra não encontrada');
 
-    let audioUrl = existingWord.audioUrl;
-    let imageUrl = existingWord.imageUrl;
+      let audioUrl = existingWord.audioUrl;
+      let imageUrl = existingWord.imageUrl;
 
-    if (audioFile) {
-      if (audioUrl) await this.deleteFromSupabase(audioUrl);
-      audioUrl = await this.uploadToSupabase(audioFile, 'audios');
+      if (audioFile) {
+        if (audioUrl) await this.deleteFromSupabase(audioUrl);
+        audioUrl = await this.uploadToSupabase(audioFile, 'audios');
+      }
+
+      if (imageFile) {
+        if (imageUrl) await this.deleteFromSupabase(imageUrl);
+        imageUrl = await this.uploadToSupabase(imageFile, 'images');
+      }
+
+      const examplesData = data.examples
+        ? JSON.parse(data.examples)
+        : undefined;
+
+      // RESOLUÇÃO DO ERRO TS2339 (Tipagem de Tags)
+      const rawTags = data.tags as unknown;
+      const tagsData =
+        typeof rawTags === 'string'
+          ? rawTags.split(',').map((t) => t.trim())
+          : (rawTags as string[]);
+
+      return await this.prisma.word.update({
+        where: { id },
+        data: {
+          term: data.term,
+          meaning: data.meaning,
+          category: data.category,
+          grammaticalType: data.grammaticalType,
+          culturalNote: data.culturalNote,
+          tags: tagsData,
+          audioUrl,
+          imageUrl,
+          examples: examplesData
+            ? {
+              deleteMany: {},
+              create: examplesData,
+            }
+            : undefined,
+        },
+        include: { examples: true },
+      });
+    } catch (error: any) {
+      console.error('❌ Erro no Service Update:', error);
+      throw new BadRequestException(`Falha ao atualizar: ${error.message}`);
     }
-
-    if (imageFile) {
-      if (imageUrl) await this.deleteFromSupabase(imageUrl);
-      imageUrl = await this.uploadToSupabase(imageFile, 'images');
-    }
-
-    return this.prisma.word.update({
-      where: { id },
-      data: {
-        ...data,
-        audioUrl,
-        imageUrl,
-        examples: data.examples ? {
-          deleteMany: {},
-          create: JSON.parse(data.examples)
-        } : undefined,
-      },
-      include: { examples: true }
-    });
   }
 
   /**
@@ -111,25 +162,35 @@ export class DictionaryService {
     return { success: true, message: `Termo "${word.term}" removido.` };
   }
 
-  /**
-   * MÉTODOS AUXILIARES (Storage & Utils)
-   */
-
-  private async handleFiles(audio?: Express.Multer.File, image?: Express.Multer.File) {
-    const audioUrl = audio ? await this.uploadToSupabase(audio, 'audios') : null;
-    const imageUrl = image ? await this.uploadToSupabase(image, 'images') : null;
+  private async handleFiles(
+    audio?: Express.Multer.File,
+    image?: Express.Multer.File,
+  ) {
+    const audioUrl = audio
+      ? await this.uploadToSupabase(audio, 'audios')
+      : null;
+    const imageUrl = image
+      ? await this.uploadToSupabase(image, 'images')
+      : null;
     return { audioUrl, imageUrl };
   }
 
-  private async uploadToSupabase(file: Express.Multer.File, folder: string): Promise<string> {
+  private async uploadToSupabase(
+    file: Express.Multer.File,
+    folder: string,
+  ): Promise<string> {
     const fileName = `${Date.now()}-${file.originalname.replace(/\s/g, '_')}`;
     const { error } = await this.supabase.storage
       .from(this.bucketName)
-      .upload(`${folder}/${fileName}`, file.buffer, { contentType: file.mimetype });
+      .upload(`${folder}/${fileName}`, file.buffer, {
+        contentType: file.mimetype,
+      });
 
     if (error) throw new BadRequestException(`Erro Storage: ${error.message}`);
 
-    return this.supabase.storage.from(this.bucketName).getPublicUrl(`${folder}/${fileName}`).data.publicUrl;
+    return this.supabase.storage
+      .from(this.bucketName)
+      .getPublicUrl(`${folder}/${fileName}`).data.publicUrl;
   }
 
   private async deleteFromSupabase(publicUrl: string) {
@@ -140,13 +201,24 @@ export class DictionaryService {
   async findAll(page: number, limit: number) {
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
-      this.prisma.word.findMany({ skip, take: limit, include: { examples: true }, orderBy: { term: 'asc' } }),
+      this.prisma.word.findMany({
+        skip,
+        take: limit,
+        include: { examples: true },
+        orderBy: { term: 'asc' },
+      }),
       this.prisma.word.count(),
     ]);
-    return { items, meta: { total, page, lastPage: Math.ceil(total / limit) } };
+    return {
+      items,
+      meta: { total, page, lastPage: Math.ceil(total / limit) },
+    };
   }
 
   async findByTerm(term: string) {
-    return this.prisma.word.findFirst({ where: { term: { equals: term, mode: 'insensitive' } }, include: { examples: true } });
+    return this.prisma.word.findFirst({
+      where: { term: { equals: term, mode: 'insensitive' } },
+      include: { examples: true },
+    });
   }
 }
