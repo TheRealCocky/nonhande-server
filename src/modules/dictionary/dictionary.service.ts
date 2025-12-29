@@ -111,9 +111,15 @@ export class DictionaryService {
         imageUrl = await this.uploadToSupabase(imageFile, 'images');
       }
 
-      const examplesData = data.examples
+      const examplesDataRaw = data.examples
         ? JSON.parse(data.examples)
         : undefined;
+
+      // ✨ SOLUÇÃO DO ERRO: Mapeamos apenas os campos que o Prisma aceita no Create
+      const cleanExamples = examplesDataRaw?.map((ex: any) => ({
+        text: ex.text,
+        translation: ex.translation,
+      }));
 
       // RESOLUÇÃO DO ERRO TS2339 (Tipagem de Tags)
       const rawTags = data.tags as unknown;
@@ -133,10 +139,10 @@ export class DictionaryService {
           tags: tagsData,
           audioUrl,
           imageUrl,
-          examples: examplesData
+          examples: cleanExamples
             ? {
-              deleteMany: {},
-              create: examplesData,
+              deleteMany: {}, // Remove todos os exemplos antigos desta palavra
+              create: cleanExamples, // Cria os novos exemplos sem o campo 'wordId' ou 'id'
             }
             : undefined,
         },
