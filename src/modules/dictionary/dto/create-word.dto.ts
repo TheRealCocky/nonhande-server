@@ -3,8 +3,8 @@ import {
   IsOptional,
   IsNotEmpty,
   IsArray,
-  IsEnum,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreateWordDto {
   @IsString()
@@ -31,12 +31,28 @@ export class CreateWordDto {
   @IsOptional()
   culturalNote?: string;
 
-  // Como o multipart-form envia tudo como string,
-  // validamos como string e fazemos o Parse no Service
+  /**
+   * Como o multipart-form envia tudo como string,
+   * validamos como string e fazemos o Parse no Service.
+   */
   @IsOptional()
+  @IsString()
   examples?: string;
 
-  @IsArray()
+  /**
+   * Converte a string vinda do FormData (ex: "Tag1, Tag2")
+   * num Array de strings real antes da validação.
+   */
   @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t !== '');
+    }
+    return value;
+  })
+  @IsArray({ message: 'As tags devem ser enviadas como um array ou string separada por vírgulas' })
   tags?: string[];
 }
