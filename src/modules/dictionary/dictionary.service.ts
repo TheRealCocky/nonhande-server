@@ -22,7 +22,7 @@ export class DictionaryService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * 1. CRIAR: Com verificação de duplicidade e upload de ficheiros
+   * 1. CRIAR: Com suporte a pastas dinâmicas por língua
    */
   create(
     data: CreateWordDto,
@@ -41,11 +41,11 @@ export class DictionaryService {
           );
         }
 
-        return from(this.handleFiles(audioFile, imageFile)).pipe(
+        // Passamos data.language (ex: "Nhaneca-Humbe") para o gerenciador de ficheiros
+        return from(this.handleFiles(data.language ?? 'Nhaneca-Humbe', audioFile, imageFile)).pipe(
           switchMap(({ audioUrl, imageUrl }) => {
             const examplesData = data.examples ? JSON.parse(data.examples) : [];
 
-            // Tratamento de tags para criação
             const rawTags = data.tags as unknown;
             const tagsData =
               typeof rawTags === 'string'
@@ -86,7 +86,7 @@ export class DictionaryService {
   }
 
   /**
-   * 2. ATUALIZAR: Substitui ficheiros no Supabase e atualiza Prisma
+   * 2. ATUALIZAR: Mantém a estrutura de pastas ao trocar ficheiros
    */
   async update(
     id: string,
@@ -101,27 +101,28 @@ export class DictionaryService {
       let audioUrl = existingWord.audioUrl;
       let imageUrl = existingWord.imageUrl;
 
+      // Usa a língua vinda do DTO ou a que já estava guardada no banco
+      const language = data.language || existingWord.language || 'Nhaneca-Humbe';
+
       if (audioFile) {
         if (audioUrl) await this.deleteFromSupabase(audioUrl);
-        audioUrl = await this.uploadToSupabase(audioFile, 'audios');
+        audioUrl = await this.uploadToSupabase(audioFile, 'audios', language);
       }
 
       if (imageFile) {
         if (imageUrl) await this.deleteFromSupabase(imageUrl);
-        imageUrl = await this.uploadToSupabase(imageFile, 'images');
+        imageUrl = await this.uploadToSupabase(imageFile, 'images', language);
       }
 
       const examplesDataRaw = data.examples
         ? JSON.parse(data.examples)
         : undefined;
 
-      // ✨ SOLUÇÃO DO ERRO: Mapeamos apenas os campos que o Prisma aceita no Create
       const cleanExamples = examplesDataRaw?.map((ex: any) => ({
         text: ex.text,
         translation: ex.translation,
       }));
 
-      // RESOLUÇÃO DO ERRO TS2339 (Tipagem de Tags)
       const rawTags = data.tags as unknown;
       const tagsData =
         typeof rawTags === 'string'
@@ -134,6 +135,7 @@ export class DictionaryService {
           term: data.term,
           meaning: data.meaning,
           category: data.category,
+          language: data.language, // Atualiza a língua se mudar
           grammaticalType: data.grammaticalType,
           culturalNote: data.culturalNote,
           tags: tagsData,
@@ -141,8 +143,8 @@ export class DictionaryService {
           imageUrl,
           examples: cleanExamples
             ? {
-              deleteMany: {}, // Remove todos os exemplos antigos desta palavra
-              create: cleanExamples, // Cria os novos exemplos sem o campo 'wordId' ou 'id'
+              deleteMany: {},
+              create: cleanExamples,
             }
             : undefined,
         },
@@ -154,9 +156,48 @@ export class DictionaryService {
     }
   }
 
-  /**
-   * 3. APAGAR: Remove do Banco e limpa Storage
-   */
+  // --- MÉTODOS PRIVADOS AUXILIARES ---
+
+  private async handleFiles(
+    language: string,
+    audio?: Express.Multer.File,
+    image?: Express.Multer.File,
+  ) {
+    const audioUrl = audio
+      ? await this.uploadToSupabase(audio, 'audios', language)
+      : null;
+    const imageUrl = image
+      ? await this.uploadToSupabase(image, 'images', language)
+      : null;
+    return { audioUrl, imageUrl };
+  }
+
+  private async uploadToSupabase(
+    file: Express.Multer.File,
+    folder: string,
+    language: string,
+  ): Promise<string> {
+    // 1. Normaliza a língua para o caminho (ex: "Nhaneca-Humbe" -> "nhaneca-humbe")
+    const langPath = language.toLowerCase().trim().replace(/\s+/g, '-');
+
+    // 2. Cria o nome do ficheiro e o caminho completo
+    const fileName = `${Date.now()}-${file.originalname.replace(/\s/g, '_')}`;
+    const fullPath = `${langPath}/${folder}/${fileName}`;
+
+    const { error } = await this.supabase.storage
+      .from(this.bucketName)
+      .upload(fullPath, file.buffer, {
+        contentType: file.mimetype,
+      });
+
+    if (error) throw new BadRequestException(`Erro Storage: ${error.message}`);
+
+    return this.supabase.storage
+      .from(this.bucketName)
+      .getPublicUrl(fullPath).data.publicUrl;
+  }
+
+  // ... (delete, findAll, findByTerm permanecem iguais)
   async delete(id: string) {
     const word = await this.prisma.word.findUnique({ where: { id } });
     if (!word) throw new NotFoundException('Vocábulo não encontrado');
@@ -166,37 +207,6 @@ export class DictionaryService {
 
     await this.prisma.word.delete({ where: { id } });
     return { success: true, message: `Termo "${word.term}" removido.` };
-  }
-
-  private async handleFiles(
-    audio?: Express.Multer.File,
-    image?: Express.Multer.File,
-  ) {
-    const audioUrl = audio
-      ? await this.uploadToSupabase(audio, 'audios')
-      : null;
-    const imageUrl = image
-      ? await this.uploadToSupabase(image, 'images')
-      : null;
-    return { audioUrl, imageUrl };
-  }
-
-  private async uploadToSupabase(
-    file: Express.Multer.File,
-    folder: string,
-  ): Promise<string> {
-    const fileName = `${Date.now()}-${file.originalname.replace(/\s/g, '_')}`;
-    const { error } = await this.supabase.storage
-      .from(this.bucketName)
-      .upload(`${folder}/${fileName}`, file.buffer, {
-        contentType: file.mimetype,
-      });
-
-    if (error) throw new BadRequestException(`Erro Storage: ${error.message}`);
-
-    return this.supabase.storage
-      .from(this.bucketName)
-      .getPublicUrl(`${folder}/${fileName}`).data.publicUrl;
   }
 
   private async deleteFromSupabase(publicUrl: string) {
@@ -228,3 +238,4 @@ export class DictionaryService {
     });
   }
 }
+
