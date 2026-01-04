@@ -24,14 +24,6 @@ export class AuthController {
   async signup(@Body() createUserDto: CreateUserDto) {
     return this.authService.signup(createUserDto);
   }
-
-  /**
-   * 🛡️ CRIAÇÃO INTERNA SEGURA (ADMIN / TEACHER)
-   * Apenas acessível via Postman com a chave secreta no Header
-   */
-  /**
-   * 🛡️ CRIAÇÃO INTERNA SEGURA (ADMIN / TEACHER)
-   */
   @Post('create-internal-user')
   async createInternal(
     @Body() createUserDto: CreateUserDto,

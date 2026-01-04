@@ -18,9 +18,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 export class DictionaryController {
   constructor(private readonly dictionaryService: DictionaryService) {}
 
-  /**
-   * 🟢 ADICIONAR PALAVRA (ADMIN & TEACHER)
-   */
+
   @Post('add-word')
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'TEACHER')
@@ -43,10 +41,7 @@ export class DictionaryController {
     );
   }
 
-  /**
-   * 🟡 EDITAR PALAVRA (ADMIN & TEACHER)
-   * Patch permite atualização parcial dos dados.
-   */
+
   @Patch('update/:id')
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'TEACHER')
@@ -67,9 +62,6 @@ export class DictionaryController {
     );
   }
 
-  /**
-   * 🔴 APAGAR PALAVRA (ADMIN & TEACHER)
-   */
   @Delete('delete/:id')
   @UseGuards(RolesGuard)
   @Roles('ADMIN', 'TEACHER')

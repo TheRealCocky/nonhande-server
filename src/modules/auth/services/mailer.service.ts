@@ -39,7 +39,7 @@ export class MailerService {
               </div>
               <p style="font-size: 14px; color: #888; margin-top: 20px;">Este código expira em breve. Se não solicitaste, ignora este e-mail.</p>
               <hr style="border: 0; border-top: 1px solid #333; margin: 30px 0;">
-              <p style="font-size: 12px; color: #555;">&copy; 2025 Nonhande - Línguas Nacionais de Angola</p>
+              <p style="font-size: 12px; color: #555;">&copy; 2026 Nonhande - Línguas Nacionais de Angola</p>
             </div>
           `,
         }),
@@ -93,7 +93,7 @@ export class MailerService {
               <p style="font-size: 12px; color: #555; margin-top: 10px;">Se o botão não funcionar, copia este link: <br> <span style="color: #f6c83d;">${resetLink}</span></p>
               
               <hr style="border: 0; border-top: 1px solid #333; margin: 30px 0;">
-              <p style="font-size: 12px; color: #555;">&copy; 2025 Nonhande - Angola</p>
+              <p style="font-size: 12px; color: #555;">&copy; 2026 Nonhande - Angola</p>
             </div>
           `,
         }),
