@@ -39,30 +39,37 @@ enum Role {
 
 // --- DICIONÁRIO ---
 model Word {
-  id      String @id @default(auto()) @map("_id") @db.ObjectId
-  term    String // Palavra na língua original (ex: Ombia)
-  meaning String // Tradução/Significado em Português
+  id String @id @default(auto()) @map("_id") @db.ObjectId
 
-  // O campo que vai permitir o Nonhande crescer para outras províncias
-  language String @default("Nhaneca-Humbe") // Ex: Umbundu, Kimbundu, Cokwe
+  // --- CAMPOS PRINCIPAIS DE BUSCA ---
+  term       String // Radical/Palavra original (ex: "lya", "hole")
+  infinitive String? // Forma infinitiva (ex: "okulya", "okuhole")
+  meaning    String // Tradução em Português
 
-  category        String // Ex: Família, Natureza, Verbo, Casa
-  grammaticalType String? // Ex: Substantivo, Adjetivo, Verbo
+  // O campo que permite o Nonhande crescer para outras províncias
+  language        String  @default("Nhaneca-Humbe") // Ex: Umbundu, Kimbundu
+  category        String // Ex: Família, Verbo, Natureza
+  grammaticalType String? // Ex: Verbo, Substantivo, Adjetivo
 
-  // Ficheiros multimédia (Supabase Storage)
+  // --- MULTIMÉDIA (Supabase Storage) ---
   audioUrl String? // Pronúncia nativa
   imageUrl String? // Ilustração do termo (Dataset visual)
+  phonetic String? // Representação fonética
+  duration Float? // Duração do áudio para o player
 
-  phonetic     String? // Representação fonética
-  duration     Float? // Duração do áudio em segundos (útil para o player)
-  culturalNote String? // Contexto histórico ou regional do uso da palavra
+  // --- CONTEXTO E METADADOS ---
+  culturalNote String? // Contexto histórico ou regional
 
-  // Metadados para busca avançada
+  // searchTags: Guardará variações como [ndyilya, tulya, okulya]
+  // para permitir links cruzados e busca inteligente
+  searchTags String[]
+
+  // Tags genéricas (as que já tinhas antes)
   tags     String[]
   synonyms String[] // Sinónimos na mesma língua nacional
 
-  // Relações
-  examples Example[] // Frases de exemplo
+  // --- RELAÇÕES ---
+  examples Example[] // Frases de exemplo (Onde faremos os links cruzados)
   progress Progress[] // Progresso de aprendizagem dos utilizadores
 
   createdAt DateTime @default(now())
