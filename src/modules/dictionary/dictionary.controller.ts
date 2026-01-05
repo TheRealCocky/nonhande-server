@@ -75,13 +75,20 @@ export class DictionaryController {
   @Get('all')
   async getAll(
     @Query('page') page: string = '1',
-    @Query('limit') limit: string = '10'
+    @Query('limit') limit: string = '10',
+    @Query('search') search?: string // ⬅️ ADICIONADO: Captura o texto da busca
   ) {
-    return this.dictionaryService.findAll(Number(page), Number(limit));
+    // Passamos o search para o service, que agora já sabe procurar em term, meaning e searchTags
+    return this.dictionaryService.findAll(
+      Number(page),
+      Number(limit),
+      search
+    );
   }
 
   /**
-   * 🔍 BUSCAR ESPECÍFICA (Acesso para todos os autenticados)
+   * 🔍 BUSCAR ESPECÍFICA (Por termo exato)
+   * Útil para quando clicamos num Link Cruzado direto
    */
   @Get('search/:term')
   async getOne(@Param('term') term: string) {

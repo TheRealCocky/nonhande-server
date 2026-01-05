@@ -11,6 +11,11 @@ export class CreateWordDto {
   @IsNotEmpty({ message: 'O termo (palavra) é obrigatório' })
   term: string;
 
+  // NOVO: Campo opcional para o Infinitivo
+  @IsString()
+  @IsOptional()
+  infinitive?: string;
+
   @IsString()
   @IsNotEmpty({ message: 'O significado é obrigatório' })
   meaning: string;
@@ -32,27 +37,36 @@ export class CreateWordDto {
   culturalNote?: string;
 
   /**
-   * Como o multipart-form envia tudo como string,
-   * validamos como string e fazemos o Parse no Service.
+   * Exemplos em formato JSON string
    */
   @IsOptional()
   @IsString()
   examples?: string;
 
   /**
-   * Converte a string vinda do FormData (ex: "Tag1, Tag2")
-   * num Array de strings real antes da validação.
+   * Tags Normais (Categorização)
    */
   @IsOptional()
   @Transform(({ value }) => {
     if (typeof value === 'string') {
-      return value
-        .split(',')
-        .map((t) => t.trim())
-        .filter((t) => t !== '');
+      return value.split(',').map((t) => t.trim()).filter((t) => t !== '');
     }
     return value;
   })
-  @IsArray({ message: 'As tags devem ser enviadas como um array ou string separada por vírgulas' })
+  @IsArray()
   tags?: string[];
+
+  /**
+   * NOVO: searchTags (Variações para busca e links cruzados)
+   * Aceita "ndyilya, tulya, okulya" e converte para ["ndyilya", "tulya", "okulya"]
+   */
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      return value.split(',').map((t) => t.trim()).filter((t) => t !== '');
+    }
+    return value;
+  })
+  @IsArray({ message: 'As searchTags devem ser enviadas como um array ou string separada por vírgulas' })
+  searchTags?: string[];
 }

@@ -16,13 +16,12 @@ export class DictionaryService {
     process.env.SUPABASE_SECRET_KEY || '',
   );
 
-  private readonly bucketName =
-    process.env.SUPABASE_BUCKET || 'Nonhande_dataset';
+  private readonly bucketName = process.env.SUPABASE_BUCKET as string;
 
   constructor(private prisma: PrismaService) {}
 
   /**
-   * 1. CRIAR: Com suporte a pastas dinâmicas por língua
+   * 1. CRIAR: Agora com suporte a infinitive e searchTags
    */
   create(
     data: CreateWordDto,
@@ -41,22 +40,21 @@ export class DictionaryService {
           );
         }
 
-        // Passamos data.language (ex: "Nhaneca-Humbe") para o gerenciador de ficheiros
         return from(this.handleFiles(data.language ?? 'Nhaneca-Humbe', audioFile, imageFile)).pipe(
           switchMap(({ audioUrl, imageUrl }) => {
             const examplesData = data.examples ? JSON.parse(data.examples) : [];
 
-            const rawTags = data.tags as unknown;
-            const tagsData =
-              typeof rawTags === 'string'
-                ? rawTags.split(',').map((t) => t.trim())
-                : (rawTags as string[]);
+            // Como o DTO já faz o transform para Array, aqui apenas garantimos a tipagem
+            const tagsData = Array.isArray(data.tags) ? data.tags : [];
+            const searchTagsData = Array.isArray(data.searchTags) ? data.searchTags : [];
 
             return from(
               this.prisma.word.create({
                 data: {
                   ...data,
-                  tags: tagsData || [],
+                  infinitive: data.infinitive,
+                  tags: tagsData,
+                  searchTags: searchTagsData,
                   audioUrl,
                   imageUrl,
                   examples: {
@@ -86,7 +84,7 @@ export class DictionaryService {
   }
 
   /**
-   * 2. ATUALIZAR: Mantém a estrutura de pastas ao trocar ficheiros
+   * 2. ATUALIZAR: Refatorado para incluir novos campos
    */
   async update(
     id: string,
@@ -101,7 +99,6 @@ export class DictionaryService {
       let audioUrl = existingWord.audioUrl;
       let imageUrl = existingWord.imageUrl;
 
-      // Usa a língua vinda do DTO ou a que já estava guardada no banco
       const language = data.language || existingWord.language || 'Nhaneca-Humbe';
 
       if (audioFile) {
@@ -114,31 +111,24 @@ export class DictionaryService {
         imageUrl = await this.uploadToSupabase(imageFile, 'images', language);
       }
 
-      const examplesDataRaw = data.examples
-        ? JSON.parse(data.examples)
-        : undefined;
-
+      const examplesDataRaw = data.examples ? JSON.parse(data.examples) : undefined;
       const cleanExamples = examplesDataRaw?.map((ex: any) => ({
         text: ex.text,
         translation: ex.translation,
       }));
 
-      const rawTags = data.tags as unknown;
-      const tagsData =
-        typeof rawTags === 'string'
-          ? rawTags.split(',').map((t) => t.trim())
-          : (rawTags as string[]);
-
       return await this.prisma.word.update({
         where: { id },
         data: {
           term: data.term,
+          infinitive: data.infinitive, // Atualizado
           meaning: data.meaning,
           category: data.category,
-          language: data.language, // Atualiza a língua se mudar
+          language: data.language,
           grammaticalType: data.grammaticalType,
           culturalNote: data.culturalNote,
-          tags: tagsData,
+          tags: data.tags,
+          searchTags: data.searchTags, // Atualizado
           audioUrl,
           imageUrl,
           examples: cleanExamples
@@ -154,6 +144,39 @@ export class DictionaryService {
       console.error('❌ Erro no Service Update:', error);
       throw new BadRequestException(`Falha ao atualizar: ${error.message}`);
     }
+  }
+
+  /**
+   * 3. BUSCA E LISTAGEM: Agora filtra por term, meaning, infinitive e tags
+   */
+  async findAll(page: number, limit: number, searchTerm?: string) {
+    const skip = (page - 1) * limit;
+
+    // Filtro OR para busca inteligente
+    const where = searchTerm ? {
+      OR: [
+        { term: { contains: searchTerm, mode: 'insensitive' as any } },
+        { meaning: { contains: searchTerm, mode: 'insensitive' as any } },
+        { infinitive: { contains: searchTerm, mode: 'insensitive' as any } },
+        { searchTags: { has: searchTerm } }, // Busca dentro do array no MongoDB
+      ]
+    } : {};
+
+    const [items, total] = await Promise.all([
+      this.prisma.word.findMany({
+        where,
+        skip,
+        take: limit,
+        include: { examples: true },
+        orderBy: { term: 'asc' },
+      }),
+      this.prisma.word.count({ where }),
+    ]);
+
+    return {
+      items,
+      meta: { total, page, lastPage: Math.ceil(total / limit) },
+    };
   }
 
   // --- MÉTODOS PRIVADOS AUXILIARES ---
@@ -177,10 +200,7 @@ export class DictionaryService {
     folder: string,
     language: string,
   ): Promise<string> {
-    // 1. Normaliza a língua para o caminho (ex: "Nhaneca-Humbe" -> "nhaneca-humbe")
     const langPath = language.toLowerCase().trim().replace(/\s+/g, '-');
-
-    // 2. Cria o nome do ficheiro e o caminho completo
     const fileName = `${Date.now()}-${file.originalname.replace(/\s/g, '_')}`;
     const fullPath = `${langPath}/${folder}/${fileName}`;
 
@@ -197,7 +217,6 @@ export class DictionaryService {
       .getPublicUrl(fullPath).data.publicUrl;
   }
 
-  // ... (delete, findAll, findByTerm permanecem iguais)
   async delete(id: string) {
     const word = await this.prisma.word.findUnique({ where: { id } });
     if (!word) throw new NotFoundException('Vocábulo não encontrado');
@@ -212,23 +231,6 @@ export class DictionaryService {
   private async deleteFromSupabase(publicUrl: string) {
     const path = publicUrl.split(`${this.bucketName}/`)[1];
     if (path) await this.supabase.storage.from(this.bucketName).remove([path]);
-  }
-
-  async findAll(page: number, limit: number) {
-    const skip = (page - 1) * limit;
-    const [items, total] = await Promise.all([
-      this.prisma.word.findMany({
-        skip,
-        take: limit,
-        include: { examples: true },
-        orderBy: { term: 'asc' },
-      }),
-      this.prisma.word.count(),
-    ]);
-    return {
-      items,
-      meta: { total, page, lastPage: Math.ceil(total / limit) },
-    };
   }
 
   async findByTerm(term: string) {
