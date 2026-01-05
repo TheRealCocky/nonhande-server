@@ -101,36 +101,62 @@ export class DictionaryService {
 
       const language = data.language || existingWord.language || 'Nhaneca-Humbe';
 
+      // Upload de Áudio
       if (audioFile) {
         if (audioUrl) await this.deleteFromSupabase(audioUrl);
         audioUrl = await this.uploadToSupabase(audioFile, 'audios', language);
       }
 
+      // Upload de Imagem
       if (imageFile) {
         if (imageUrl) await this.deleteFromSupabase(imageUrl);
         imageUrl = await this.uploadToSupabase(imageFile, 'images', language);
       }
 
-      const examplesDataRaw = data.examples ? JSON.parse(data.examples) : undefined;
+      // --- TRATAMENTO DE DADOS (CONVERSÃO FORM-DATA PARA PRISMA) ---
+
+      // 1. Exemplos (Vem como string JSON do Frontend)
+      const examplesDataRaw = data.examples ? JSON.parse(data.examples as any) : undefined;
       const cleanExamples = examplesDataRaw?.map((ex: any) => ({
         text: ex.text,
         translation: ex.translation,
       }));
 
+      // 2. Tags (Conversão de String/JSON para String[])
+      let finalTags: string[] | undefined;
+      if (data.tags) {
+        const tagsRaw = data.tags as any;
+        finalTags = typeof tagsRaw === 'string'
+          ? (tagsRaw.startsWith('[') ? JSON.parse(tagsRaw) : tagsRaw.split(',').map(t => t.trim()).filter(Boolean))
+          : tagsRaw;
+      }
+
+      // 3. SearchTags (Conversão de String/JSON para String[])
+      let finalSearchTags: string[] | undefined;
+      if (data.searchTags) {
+        const sTagsRaw = data.searchTags as any;
+        finalSearchTags = typeof sTagsRaw === 'string'
+          ? (sTagsRaw.startsWith('[') ? JSON.parse(sTagsRaw) : sTagsRaw.split(',').map(t => t.trim()).filter(Boolean))
+          : sTagsRaw;
+      }
+
+      // --- EXECUÇÃO DO UPDATE NO PRISMA ---
       return await this.prisma.word.update({
         where: { id },
         data: {
           term: data.term,
-          infinitive: data.infinitive, // Atualizado
+          infinitive: data.infinitive,
           meaning: data.meaning,
           category: data.category,
           language: data.language,
           grammaticalType: data.grammaticalType,
           culturalNote: data.culturalNote,
-          tags: data.tags,
-          searchTags: data.searchTags, // Atualizado
+          // Inserção das listas tratadas
+          tags: finalTags,
+          searchTags: finalSearchTags,
           audioUrl,
           imageUrl,
+          // Lógica de substituir exemplos antigos pelos novos
           examples: cleanExamples
             ? {
               deleteMany: {},
@@ -142,6 +168,7 @@ export class DictionaryService {
       });
     } catch (error: any) {
       console.error('❌ Erro no Service Update:', error);
+      // Captura o erro do Prisma e devolve uma mensagem legível
       throw new BadRequestException(`Falha ao atualizar: ${error.message}`);
     }
   }
