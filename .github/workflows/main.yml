@@ -22,19 +22,21 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Lint Check
-        run: npm run lint
-
+      # Movi para aqui para garantir que o build e os testes tenham o cliente pronto
       - name: Run Prisma Generate
         run: npx prisma generate
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_TEST }}
+
+      - name: Lint Check
+        run: npm run lint
 
       - name: Run Tests
         run: npm run test -- --passWithNoTests
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_TEST }}
           JWT_SECRET: "test-secret"
+          # Adiciona as outras envs se os teus testes as exigirem
 
       - name: Build
         run: npm run build
@@ -44,3 +46,4 @@ jobs:
         with:
           name: dist-files
           path: dist/
+          retention-days: 5 # Limpa os arquivos antigos para não gastar espaço
