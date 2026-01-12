@@ -30,4 +30,7 @@ async function bootstrap() {
   console.log(`🚀 Nonhande Backend is running`);
   console.log(`📡 Allowing CORS for: ${frontendUrl}`);
 }
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('❌ Error starting server:', err);
+  process.exit(1);
+});

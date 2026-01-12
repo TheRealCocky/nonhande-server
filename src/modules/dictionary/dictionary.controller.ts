@@ -1,7 +1,17 @@
 import {
-  Controller, Post, Get, Patch, Delete, Body, Query, Param,
-  UseInterceptors, UploadedFiles, UseGuards,
-  BadRequestException
+  Controller,
+  Post,
+  Get,
+  Patch,
+  Delete,
+  Body,
+  Query,
+  Param,
+  UseInterceptors,
+  UploadedFiles,
+  UseGuards,
+  BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { DictionaryService } from './dictionary.service';
@@ -94,7 +104,7 @@ export class DictionaryController {
   async getOne(@Param('term') term: string) {
     const word = await this.dictionaryService.findByTerm(term);
     if (!word) {
-      throw new BadRequestException('Palavra não encontrada.');
+      throw new NotFoundException('Palavra não encontrada.');
     }
     return word;
   }

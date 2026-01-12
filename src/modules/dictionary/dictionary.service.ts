@@ -7,10 +7,10 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { createClient } from '@supabase/supabase-js';
 import { CreateWordDto } from './dto/create-word.dto';
-import { from, Observable, throwError, of } from 'rxjs';
-import { catchError, switchMap, tap } from 'rxjs/operators';
+import { from, Observable, throwError } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
+import type { Cache } from 'cache-manager'; // Correção TS1272
 
 @Injectable()
 export class DictionaryService {
@@ -23,22 +23,39 @@ export class DictionaryService {
 
   constructor(
     private prisma: PrismaService,
-    @Inject(CACHE_MANAGER) private cacheManager: Cache, // 👈 Injeção do Cache
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
   /**
-   * Limpa o cache para garantir que os dados novos apareçam no feed e termos
+   * Limpa o cache de forma segura para evitar erros de versão do cache-manager
    */
   private async clearDictionaryCache() {
-    const keys: string[] = await this.cacheManager.store.keys();
-    const dictionaryKeys = keys.filter(
-      (key) => key.startsWith('feed_') || key.startsWith('term_'),
-    );
-    await Promise.all(dictionaryKeys.map((key) => this.cacheManager.del(key)));
+    try {
+      const store = (this.cacheManager as any).store;
+      if (store && typeof store.keys === 'function') {
+        const keys: string[] = await store.keys();
+        const dictionaryKeys = keys.filter(
+          (key) => key.startsWith('feed_') || key.startsWith('term_'),
+        );
+
+        if (dictionaryKeys.length > 0) {
+          await Promise.all(
+            dictionaryKeys.map((key) => this.cacheManager.del(key)),
+          );
+        }
+      } else {
+        // Fallback para reset total caso a store não suporte listagem de chaves
+        if (typeof (this.cacheManager as any).reset === 'function') {
+          await (this.cacheManager as any).reset();
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Erro ao limpar cache, continuando operação...');
+    }
   }
 
   /**
-   * 1. CRIAR: Com invalidação de cache
+   * 1. CRIAR: Com suporte a RxJS e limpeza de cache
    */
   create(
     data: CreateWordDto,
@@ -69,7 +86,6 @@ export class DictionaryService {
               this.prisma.word.create({
                 data: {
                   ...data,
-                  infinitive: data.infinitive,
                   tags: tagsData,
                   searchTags: searchTagsData,
                   audioUrl,
@@ -86,7 +102,11 @@ export class DictionaryService {
                 include: { examples: true },
               }),
             ).pipe(
-              tap(async () => await this.clearDictionaryCache()), // 👈 Limpa cache
+              // SwitchMap garante que o cache é limpo antes de retornar
+              switchMap(async (newWord) => {
+                await this.clearDictionaryCache();
+                return newWord;
+              }),
             );
           }),
         );
@@ -103,7 +123,7 @@ export class DictionaryService {
   }
 
   /**
-   * 2. ATUALIZAR: Com invalidação de cache
+   * 2. ATUALIZAR: Async/Await padrão
    */
   async update(
     id: string,
@@ -123,17 +143,10 @@ export class DictionaryService {
         if (audioUrl) await this.deleteFromSupabase(audioUrl);
         audioUrl = await this.uploadToSupabase(audioFile, 'audios', language);
       }
-
       if (imageFile) {
         if (imageUrl) await this.deleteFromSupabase(imageUrl);
         imageUrl = await this.uploadToSupabase(imageFile, 'images', language);
       }
-
-      const examplesDataRaw = data.examples ? JSON.parse(data.examples as any) : undefined;
-      const cleanExamples = examplesDataRaw?.map((ex: any) => ({
-        text: ex.text,
-        translation: ex.translation,
-      }));
 
       const processTags = (raw: any) => {
         if (!raw) return undefined;
@@ -142,29 +155,28 @@ export class DictionaryService {
           : raw;
       };
 
-      const finalTags = processTags(data.tags);
-      const finalSearchTags = processTags(data.searchTags);
-
       const updatedWord = await this.prisma.word.update({
         where: { id },
         data: {
-          term: data.term,
-          infinitive: data.infinitive,
-          meaning: data.meaning,
-          category: data.category,
-          language: data.language,
-          grammaticalType: data.grammaticalType,
-          culturalNote: data.culturalNote,
-          tags: finalTags,
-          searchTags: finalSearchTags,
+          ...data,
+          tags: processTags(data.tags),
+          searchTags: processTags(data.searchTags),
           audioUrl,
           imageUrl,
-          examples: cleanExamples ? { deleteMany: {}, create: cleanExamples } : undefined,
+          examples: data.examples
+            ? {
+              deleteMany: {},
+              create: JSON.parse(data.examples as any).map((ex: any) => ({
+                text: ex.text,
+                translation: ex.translation,
+              })),
+            }
+            : undefined,
         },
         include: { examples: true },
       });
 
-      await this.clearDictionaryCache(); // 👈 Limpa cache após update
+      await this.clearDictionaryCache();
       return updatedWord;
     } catch (error: any) {
       throw new BadRequestException(`Falha ao atualizar: ${error.message}`);
@@ -172,7 +184,7 @@ export class DictionaryService {
   }
 
   /**
-   * 3. BUSCA E LISTAGEM: Cache no Feed
+   * 3. FIND ALL: Com lógica de Cache Key
    */
   async findAll(page: number, limit: number, searchTerm?: string) {
     const cacheKey = `feed_${page}_${limit}_${searchTerm || 'all'}`;
@@ -184,14 +196,15 @@ export class DictionaryService {
       OR: [
         { term: { contains: searchTerm, mode: 'insensitive' as any } },
         { meaning: { contains: searchTerm, mode: 'insensitive' as any } },
-        { infinitive: { contains: searchTerm, mode: 'insensitive' as any } },
         { searchTags: { has: searchTerm } },
-      ]
+      ],
     } : {};
 
     const [items, total] = await Promise.all([
       this.prisma.word.findMany({
-        where, skip, take: limit,
+        where,
+        skip,
+        take: limit,
         include: { examples: true },
         orderBy: { term: 'asc' },
       }),
@@ -203,12 +216,12 @@ export class DictionaryService {
       meta: { total, page, lastPage: Math.ceil(total / limit) },
     };
 
-    await this.cacheManager.set(cacheKey, result); // 👈 Guarda no cache
+    await this.cacheManager.set(cacheKey, result);
     return result;
   }
 
   /**
-   * BUSCA POR TERMO: Cache na página dinâmica
+   * 4. FIND BY TERM: Cache para páginas individuais
    */
   async findByTerm(term: string) {
     const cacheKey = `term_${term.toLowerCase()}`;
@@ -221,13 +234,13 @@ export class DictionaryService {
     });
 
     if (word) {
-      await this.cacheManager.set(cacheKey, word); // 👈 Guarda no cache
+      await this.cacheManager.set(cacheKey, word);
     }
     return word;
   }
 
   /**
-   * DELETE: Remove arquivos e invalida cache
+   * 5. DELETE: Remove arquivos e limpa cache
    */
   async delete(id: string) {
     const word = await this.prisma.word.findUnique({ where: { id } });
@@ -237,33 +250,29 @@ export class DictionaryService {
     if (word.imageUrl) await this.deleteFromSupabase(word.imageUrl);
 
     await this.prisma.word.delete({ where: { id } });
-    await this.clearDictionaryCache(); // 👈 Limpa cache
-    return { success: true, message: `Termo "${word.term}" removido.` };
+    await this.clearDictionaryCache();
+    return { success: true };
   }
 
-  // --- MÉTODOS PRIVADOS AUXILIARES ---
+  // --- PRIVADOS ---
 
-  private async handleFiles(language: string, audio?: Express.Multer.File, image?: Express.Multer.File) {
-    const audioUrl = audio ? await this.uploadToSupabase(audio, 'audios', language) : null;
-    const imageUrl = image ? await this.uploadToSupabase(image, 'images', language) : null;
+  private async handleFiles(lang: string, audio?: Express.Multer.File, img?: Express.Multer.File) {
+    const audioUrl = audio ? await this.uploadToSupabase(audio, 'audios', lang) : null;
+    const imageUrl = img ? await this.uploadToSupabase(img, 'images', lang) : null;
     return { audioUrl, imageUrl };
   }
 
-  private async uploadToSupabase(file: Express.Multer.File, folder: string, language: string): Promise<string> {
-    const langPath = language.toLowerCase().trim().replace(/\s+/g, '-');
-    const fileName = `${Date.now()}-${file.originalname.replace(/\s/g, '_')}`;
-    const fullPath = `${langPath}/${folder}/${fileName}`;
-
-    const { error } = await this.supabase.storage.from(this.bucketName).upload(fullPath, file.buffer, {
+  private async uploadToSupabase(file: Express.Multer.File, folder: string, lang: string): Promise<string> {
+    const path = `${lang.toLowerCase().replace(/\s+/g, '-')}/${folder}/${Date.now()}-${file.originalname.replace(/\s/g, '_')}`;
+    const { error } = await this.supabase.storage.from(this.bucketName).upload(path, file.buffer, {
       contentType: file.mimetype,
     });
-
     if (error) throw new BadRequestException(`Erro Storage: ${error.message}`);
-    return this.supabase.storage.from(this.bucketName).getPublicUrl(fullPath).data.publicUrl;
+    return this.supabase.storage.from(this.bucketName).getPublicUrl(path).data.publicUrl;
   }
 
-  private async deleteFromSupabase(publicUrl: string) {
-    const path = publicUrl.split(`${this.bucketName}/`)[1];
+  private async deleteFromSupabase(url: string) {
+    const path = url.split(`${this.bucketName}/`)[1];
     if (path) await this.supabase.storage.from(this.bucketName).remove([path]);
   }
 }
