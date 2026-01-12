@@ -7,28 +7,32 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- UTILIZADORES ---
+// --- UTILIZADORES E PROGRESSÃO GLOBAL ---
 model User {
-  id        String  @id @default(auto()) @map("_id") @db.ObjectId
-  name      String
-  email     String  @unique
-  password  String?
-  provider  String  @default("credentials")
-  googleId  String?
-  avatarUrl String?
-  bio       String?
-  role      Role    @default(STUDENT)
+  id               String  @id @default(auto()) @map("_id") @db.ObjectId
+  name             String
+  email            String  @unique
+  password         String?
+  provider         String  @default("credentials")
+  googleId         String?
+  avatarUrl        String?
+  bio              String?
+  role             Role    @default(STUDENT)
+  isVerified       Boolean @default(false)
+  verificationCode String?
 
-  // NOVOS CAMPOS PARA SEGURANÇA REAL
-  isVerified       Boolean @default(false) // Começa como falso até validar email
-  verificationCode String? // Onde guardamos o código temporário
+  // Atributos de Gamificação
+  xp         Int      @default(0)
+  streak     Int      @default(0)
+  lastActive DateTime @default(now())
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relações
-  progress Progress[]
-  calls    Call[]     @relation("UserCalls")
+  wordProgress   Progress[] // Progresso no Dicionário
+  lessonProgress UserLesson[] // Lições concluídas na Gamificação
+  calls          Call[]       @relation("UserCalls")
 }
 
 enum Role {
@@ -37,40 +41,30 @@ enum Role {
   STUDENT
 }
 
-// --- DICIONÁRIO ---
+// --- DICIONÁRIO (O ACERVO) ---
 model Word {
-  id String @id @default(auto()) @map("_id") @db.ObjectId
+  id              String  @id @default(auto()) @map("_id") @db.ObjectId
+  term            String // Radical/Palavra original
+  infinitive      String? // Forma infinitiva
+  meaning         String // Tradução em Português
+  language        String  @default("Nhaneca-Humbe")
+  category        String
+  grammaticalType String?
 
-  // --- CAMPOS PRINCIPAIS DE BUSCA ---
-  term       String // Radical/Palavra original (ex: "lya", "hole")
-  infinitive String? // Forma infinitiva (ex: "okulya", "okuhole")
-  meaning    String // Tradução em Português
+  // Multimédia
+  audioUrl String?
+  imageUrl String?
+  phonetic String?
+  duration Float?
 
-  // O campo que permite o Nonhande crescer para outras províncias
-  language        String  @default("Nhaneca-Humbe") // Ex: Umbundu, Kimbundu
-  category        String // Ex: Família, Verbo, Natureza
-  grammaticalType String? // Ex: Verbo, Substantivo, Adjetivo
+  culturalNote String?
+  searchTags   String[]
+  tags         String[]
+  synonyms     String[]
 
-  // --- MULTIMÉDIA (Supabase Storage) ---
-  audioUrl String? // Pronúncia nativa
-  imageUrl String? // Ilustração do termo (Dataset visual)
-  phonetic String? // Representação fonética
-  duration Float? // Duração do áudio para o player
-
-  // --- CONTEXTO E METADADOS ---
-  culturalNote String? // Contexto histórico ou regional
-
-  // searchTags: Guardará variações como [ndyilya, tulya, okulya]
-  // para permitir links cruzados e busca inteligente
-  searchTags String[]
-
-  // Tags genéricas (as que já tinhas antes)
-  tags     String[]
-  synonyms String[] // Sinónimos na mesma língua nacional
-
-  // --- RELAÇÕES ---
-  examples Example[] // Frases de exemplo (Onde faremos os links cruzados)
-  progress Progress[] // Progresso de aprendizagem dos utilizadores
+  // Relações
+  examples     Example[]
+  wordProgress Progress[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -78,20 +72,93 @@ model Word {
 
 model Example {
   id          String  @id @default(auto()) @map("_id") @db.ObjectId
-  text        String // Frase em Nhaneca
-  translation String // Tradução da frase
+  text        String
+  translation String
   audioUrl    String?
 
   wordId String @db.ObjectId
   word   Word   @relation(fields: [wordId], references: [id], onDelete: Cascade)
 }
 
-// --- APRENDIZAGEM E GAMIFICAÇÃO ---
+// --- ESTRUTURA DE GAMIFICAÇÃO (A JORNADA) ---
+
+model Level {
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  order       Int // 1, 2, 3...
+  title       String // Ex: "Nível 1: O Despertar"
+  description String?
+  units       Unit[]
+}
+
+model Unit {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  order       Int
+  title       String // Ex: "Unidade 1: Saudações"
+  description String?
+  levelId     String   @db.ObjectId
+  level       Level    @relation(fields: [levelId], references: [id])
+  lessons     Lesson[]
+}
+
+model Lesson {
+  id       String     @id @default(auto()) @map("_id") @db.ObjectId
+  order    Int
+  title    String // Ex: "Lição 1.1: Cumprimentos Básicos"
+  xpReward Int        @default(10)
+  access   AccessType @default(FREE) // Para o modelo Freemium/Premium
+
+  unitId      String       @db.ObjectId
+  unit        Unit         @relation(fields: [unitId], references: [id])
+  challenges  Challenge[]
+  userHistory UserLesson[]
+}
+
+model Challenge {
+  id       String        @id @default(auto()) @map("_id") @db.ObjectId
+  type     ChallengeType // SELECT, TRANSLATE, etc.
+  question String // A pergunta exibida
+
+  // O campo Json permite guardar opções, resposta correta e áudios específicos
+  // Ex: { "options": ["Mene", "Tyina", "Tala"], "correct": "Mene" }
+  content Json
+
+  lessonId String @db.ObjectId
+  lesson   Lesson @relation(fields: [lessonId], references: [id])
+}
+
+enum ChallengeType {
+  SELECT // Escolha múltipla
+  TRANSLATE // Digitar a tradução
+  ORDER // Ordenar palavras para formar frase
+  PAIRS // Ligar colunas
+  VOICE // Prática de voz (Preparado para o Whisper no futuro)
+}
+
+enum AccessType {
+  FREE
+  PREMIUM
+  ENTERPRISE
+}
+
+// --- REGISTOS DE PROGRESSO ---
+
+model UserLesson {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  lessonId    String   @db.ObjectId
+  completedAt DateTime @default(now())
+  score       Int // Percentagem de acerto
+
+  user   User   @relation(fields: [userId], references: [id])
+  lesson Lesson @relation(fields: [lessonId], references: [id])
+}
+
+// Mantendo o progresso individual de palavras do dicionário
 model Progress {
   id         String   @id @default(auto()) @map("_id") @db.ObjectId
   userId     String   @db.ObjectId
   wordId     String   @db.ObjectId
-  level      Int      @default(0) // Nível de memorização
+  level      Int      @default(0)
   mastered   Boolean  @default(false)
   lastReview DateTime @default(now())
 
@@ -99,7 +166,7 @@ model Progress {
   word Word @relation(fields: [wordId], references: [id])
 }
 
-// --- COMUNICAÇÃO (CHAMADAS) ---
+// --- COMUNICAÇÃO ---
 model Call {
   id        String    @id @default(auto()) @map("_id") @db.ObjectId
   callerId  String    @db.ObjectId
