@@ -22,16 +22,17 @@ model User {
   verificationCode String?
 
   // Atributos de Gamificação
-  xp         Int      @default(0)
-  streak     Int      @default(0)
-  lastActive DateTime @default(now())
+  xp         Int       @default(0)
+  streak     Int       @default(0)
+  // O "?" torna o campo opcional, aceitando os dados antigos que estão null
+  lastActive DateTime? @default(now())
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relações
-  wordProgress   Progress[] // Progresso no Dicionário
-  lessonProgress UserLesson[] // Lições concluídas na Gamificação
+  wordProgress   Progress[]
+  lessonProgress UserLesson[]
   calls          Call[]       @relation("UserCalls")
 }
 
