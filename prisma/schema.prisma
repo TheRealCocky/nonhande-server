@@ -22,12 +22,15 @@ model User {
   verificationCode String?
 
   // Atributos de Gamificação (Padrão Duolingo)
-  xp               Int       @default(0)
-  hearts           Int       @default(5) // Vidas atuais
-  maxHearts        Int       @default(5) // Limite de vidas
-  lastHeartUpdate  DateTime  @default(now()) // Para calcular a regeneração de 2h
-  streak           Int       @default(0) // Ofensiva de dias
-  lastStreakUpdate DateTime? // Para verificar se jogou hoje/ontem
+  xp        Int @default(0)
+  hearts    Int @default(5)
+  maxHearts Int @default(5)
+
+  // ✅ CAMBIO: Adicionado '?' para não quebrar utilizadores antigos
+  lastHeartUpdate DateTime? @default(now())
+
+  streak           Int       @default(0)
+  lastStreakUpdate DateTime?
   lastActive       DateTime? @default(now())
 
   createdAt DateTime @default(now())
