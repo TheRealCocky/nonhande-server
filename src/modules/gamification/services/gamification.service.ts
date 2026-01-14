@@ -28,14 +28,16 @@ export class GamificationService {
      * use (user as any).hearts para forçar a tipagem, mas o ideal
      * é o Prisma reconhecer o novo Schema.
      */
+    // Localiza esta parte no getUserStatus
     if (user.hearts < user.maxHearts) {
       const now = new Date();
-      const elapsed = now.getTime() - user.lastHeartUpdate.getTime();
+      const lastUpdate = user.lastHeartUpdate || now; // Se for null, usa 'now'
+      const elapsed = now.getTime() - lastUpdate.getTime();
       const heartsToAdd = Math.floor(elapsed / this.REGEN_TIME);
 
       if (heartsToAdd > 0) {
         const newHearts = Math.min(user.maxHearts, user.hearts + heartsToAdd);
-        const nextUpdate = new Date(user.lastHeartUpdate.getTime() + (heartsToAdd * this.REGEN_TIME));
+        const nextUpdate = new Date(lastUpdate.getTime() + (heartsToAdd * this.REGEN_TIME));
 
         return await this.prisma.user.update({
           where: { id: userId },

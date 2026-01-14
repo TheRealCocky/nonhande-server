@@ -1,4 +1,8 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CompleteLessonDto } from '../dto/complete-lesson.dto';
 
@@ -6,23 +10,17 @@ import { CompleteLessonDto } from '../dto/complete-lesson.dto';
 export class ProgressionService {
   constructor(private prisma: PrismaService) {}
 
-  private readonly REGEN_TIME_PER_HEART = 24 * 60 * 1000; // 24 minutos = 1 coração
+  private readonly REGEN_TIME_PER_HEART = 24 * 60 * 1000;
 
-  /**
-   * 🏆 PROCESSAR CONCLUSÃO DE LIÇÃO
-   */
   async processLessonCompletion(dto: CompleteLessonDto) {
     const { userId, lessonId, score } = dto;
-
-    // 1. Recalcula corações por tempo antes de validar o resultado
     const user = await this.computeAndGetUpdatedUser(userId);
 
     const lesson = await this.prisma.lesson.findUnique({ where: { id: lessonId } });
     if (!lesson) throw new NotFoundException('Lição não encontrada.');
 
-    // 2. Lógica de Erro (Score < 60%)
     if (score < 60) {
-      const updatedUser = await this.loseHeart(userId); // Chamada interna corrigida
+      const updatedUser = await this.loseHeart(userId);
       return {
         success: false,
         message: 'Pontuação insuficiente. Perdeste um coração!',
@@ -31,7 +29,6 @@ export class ProgressionService {
       };
     }
 
-    // 3. Lógica de Sucesso (Score >= 60%)
     const finalUser = await this.updateUserStats(user, lesson.xpReward);
 
     await this.prisma.userLesson.create({
@@ -48,21 +45,20 @@ export class ProgressionService {
     };
   }
 
-  /**
-   * 💓 RECALCULAR E OBTER USUÁRIO (O motor de regeneração)
-   */
   async computeAndGetUpdatedUser(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado.');
 
     if (user.hearts < user.maxHearts) {
       const now = new Date();
-      const elapsed = now.getTime() - user.lastHeartUpdate.getTime();
+      // ✅ CORREÇÃO: Fallback para 'now' se for null
+      const lastUpdate = user.lastHeartUpdate || now;
+      const elapsed = now.getTime() - lastUpdate.getTime();
       const heartsToAdd = Math.floor(elapsed / this.REGEN_TIME_PER_HEART);
 
       if (heartsToAdd > 0) {
         const newHearts = Math.min(user.maxHearts, user.hearts + heartsToAdd);
-        const nextUpdate = new Date(user.lastHeartUpdate.getTime() + (heartsToAdd * this.REGEN_TIME_PER_HEART));
+        const nextUpdate = new Date(lastUpdate.getTime() + (heartsToAdd * this.REGEN_TIME_PER_HEART));
 
         return await this.prisma.user.update({
           where: { id: userId },
@@ -76,9 +72,6 @@ export class ProgressionService {
     return user;
   }
 
-  /**
-   * 💔 PERDA DE VIDA (Tornado PUBLIC para o Controller usar)
-   */
   public async loseHeart(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado');
@@ -91,15 +84,11 @@ export class ProgressionService {
       where: { id: userId },
       data: {
         hearts: { decrement: 1 },
-        // Se ele tinha o máximo de vidas, a contagem de tempo para recuperar começa agora
         lastHeartUpdate: user.hearts === user.maxHearts ? new Date() : undefined
       }
     });
   }
 
-  /**
-   * 🔥 XP E OFENSIVA (STREAK)
-   */
   private async updateUserStats(user: any, xpReward: number) {
     const now = new Date();
     let newStreak = user.streak;
@@ -128,13 +117,12 @@ export class ProgressionService {
     });
   }
 
-  /**
-   * 🔍 STATUS PARA O FRONTEND (Timer do Coração)
-   */
   async getFullStatus(userId: string) {
     const user = await this.computeAndGetUpdatedUser(userId);
     const now = new Date();
-    const elapsed = now.getTime() - user.lastHeartUpdate.getTime();
+    // ✅ CORREÇÃO: Fallback para 'now' se for null
+    const lastUpdate = user.lastHeartUpdate || now;
+    const elapsed = now.getTime() - lastUpdate.getTime();
 
     let nextHeartIn = 0;
     if (user.hearts < user.maxHearts) {
