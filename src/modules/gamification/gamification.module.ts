@@ -1,19 +1,20 @@
 import { Module } from '@nestjs/common';
-import { GamificationController } from './controllers/gamification.controller';
+import { PrismaModule } from 'src/prisma/prisma.module';
 import { GamificationService } from './services/gamification.service';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { ProgressionService } from './services/progression.service';
+import { GamificationController } from './controllers/gamification.controller';
+import { ProgressionController } from './controllers/progression.controller';
 
 @Module({
-  imports: [], // Se tiveres um PrismaModule, coloca-o aqui
+  imports: [PrismaModule], // Precisamos do Prisma para os services funcionarem
   controllers: [
     GamificationController,
-    // Futuros controllers como RankingController entrarão aqui
+    ProgressionController
   ],
   providers: [
     GamificationService,
-    PrismaService,
-    // Futuros services como ProgressionService entrarão aqui
+    ProgressionService
   ],
-  exports: [GamificationService] // Exportamos caso o módulo de Usuários precise atualizar XP
+  exports: [GamificationService, ProgressionService], // Opcional: permite usar noutros módulos
 })
 export class GamificationModule {}

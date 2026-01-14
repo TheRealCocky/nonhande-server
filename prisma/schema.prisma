@@ -21,11 +21,14 @@ model User {
   isVerified       Boolean @default(false)
   verificationCode String?
 
-  // Atributos de Gamificação
-  xp         Int       @default(0)
-  streak     Int       @default(0)
-  // O "?" torna o campo opcional, aceitando os dados antigos que estão null
-  lastActive DateTime? @default(now())
+  // Atributos de Gamificação (Padrão Duolingo)
+  xp               Int       @default(0)
+  hearts           Int       @default(5) // Vidas atuais
+  maxHearts        Int       @default(5) // Limite de vidas
+  lastHeartUpdate  DateTime  @default(now()) // Para calcular a regeneração de 2h
+  streak           Int       @default(0) // Ofensiva de dias
+  lastStreakUpdate DateTime? // Para verificar se jogou hoje/ontem
+  lastActive       DateTime? @default(now())
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -42,17 +45,16 @@ enum Role {
   STUDENT
 }
 
-// --- DICIONÁRIO (O ACERVO) ---
+// --- DICIONÁRIO (O ACERVO - INTACTO) ---
 model Word {
   id              String  @id @default(auto()) @map("_id") @db.ObjectId
-  term            String // Radical/Palavra original
-  infinitive      String? // Forma infinitiva
-  meaning         String // Tradução em Português
+  term            String
+  infinitive      String?
+  meaning         String
   language        String  @default("Nhaneca-Humbe")
   category        String
   grammaticalType String?
 
-  // Multimédia
   audioUrl String?
   imageUrl String?
   phonetic String?
@@ -63,7 +65,6 @@ model Word {
   tags         String[]
   synonyms     String[]
 
-  // Relações
   examples     Example[]
   wordProgress Progress[]
 
@@ -81,58 +82,66 @@ model Example {
   word   Word   @relation(fields: [wordId], references: [id], onDelete: Cascade)
 }
 
-// --- ESTRUTURA DE GAMIFICAÇÃO (A JORNADA) ---
+// --- ESTRUTURA DE GAMIFICAÇÃO (PURIFICADA PARA MULTI-LÍNGUA) ---
 
 model Level {
   id          String  @id @default(auto()) @map("_id") @db.ObjectId
-  order       Int // 1, 2, 3...
-  title       String // Ex: "Nível 1: O Despertar"
+  order       Int
+  title       String
   description String?
-  units       Unit[]
+  language    String  @default("nhaneca")
+
+  units     Unit[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Unit {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
   order       Int
-  title       String // Ex: "Unidade 1: Saudações"
+  title       String
   description String?
-  levelId     String   @db.ObjectId
-  level       Level    @relation(fields: [levelId], references: [id])
-  lessons     Lesson[]
+
+  levelId String @db.ObjectId
+  level   Level  @relation(fields: [levelId], references: [id], onDelete: Cascade)
+
+  lessons   Lesson[]
+  createdAt DateTime @default(now())
 }
 
 model Lesson {
   id       String     @id @default(auto()) @map("_id") @db.ObjectId
   order    Int
-  title    String // Ex: "Lição 1.1: Cumprimentos Básicos"
+  title    String
   xpReward Int        @default(10)
-  access   AccessType @default(FREE) // Para o modelo Freemium/Premium
+  access   AccessType @default(FREE)
 
-  unitId      String       @db.ObjectId
-  unit        Unit         @relation(fields: [unitId], references: [id])
+  unitId String @db.ObjectId
+  unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
   challenges  Challenge[]
   userHistory UserLesson[]
+  createdAt   DateTime     @default(now())
 }
 
 model Challenge {
   id       String        @id @default(auto()) @map("_id") @db.ObjectId
-  type     ChallengeType // SELECT, TRANSLATE, etc.
-  question String // A pergunta exibida
+  type     ChallengeType
+  question String
 
-  // O campo Json permite guardar opções, resposta correta e áudios específicos
-  // Ex: { "options": ["Mene", "Tyina", "Tala"], "correct": "Mene" }
-  content Json
+  content Json // { "options": [], "correct": "", "audioUrl": "" }
 
-  lessonId String @db.ObjectId
-  lesson   Lesson @relation(fields: [lessonId], references: [id])
+  lessonId  String   @db.ObjectId
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 }
 
 enum ChallengeType {
-  SELECT // Escolha múltipla
-  TRANSLATE // Digitar a tradução
-  ORDER // Ordenar palavras para formar frase
-  PAIRS // Ligar colunas
-  VOICE // Prática de voz (Preparado para o Whisper no futuro)
+  SELECT
+  TRANSLATE
+  ORDER
+  PAIRS
+  VOICE
 }
 
 enum AccessType {
@@ -148,13 +157,12 @@ model UserLesson {
   userId      String   @db.ObjectId
   lessonId    String   @db.ObjectId
   completedAt DateTime @default(now())
-  score       Int // Percentagem de acerto
+  score       Int
 
   user   User   @relation(fields: [userId], references: [id])
   lesson Lesson @relation(fields: [lessonId], references: [id])
 }
 
-// Mantendo o progresso individual de palavras do dicionário
 model Progress {
   id         String   @id @default(auto()) @map("_id") @db.ObjectId
   userId     String   @db.ObjectId
