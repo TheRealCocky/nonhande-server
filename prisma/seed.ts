@@ -35,33 +35,33 @@ async function main() {
                       content: {
                         options: ['Mene', 'Tyina', 'Nawa'],
                         correct: 'Mene',
-                        audioUrl: null // Placeholder para futuro áudio no Supabase
-                      }
+                        audioUrl: null, // Placeholder para futuro áudio no Supabase
+                      },
                     },
                     {
                       type: ChallengeType.TRANSLATE,
                       question: "O que significa 'Tatekulu'?",
                       content: {
                         correct: 'Avô',
-                        explanation: 'Termo de respeito para anciãos ou avôs.'
-                      }
+                        explanation: 'Termo de respeito para anciãos ou avôs.',
+                      },
                     },
                     {
                       type: ChallengeType.ORDER,
                       question: "Ordene a frase: 'Estou bem'",
                       content: {
                         words: ['Nawa', 'ndyi', 'li'],
-                        correctOrder: ['Ndyi', 'li', 'nawa']
-                      }
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        }
-      }
-    }
+                        correctOrder: ['Ndyi', 'li', 'nawa'],
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    },
   });
 
   console.log(`✅ Nível '${level1.title}' criado com sucesso!`);

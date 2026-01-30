@@ -306,5 +306,6 @@ export class DictionaryService {
     const path = url.split(`${this.bucketName}/`)[1];
     if (path) await this.supabase.storage.from(this.bucketName).remove([path]);
   }
+
 }
 

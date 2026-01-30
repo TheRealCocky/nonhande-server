@@ -22,7 +22,7 @@ import { Observable } from 'rxjs';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-
+import * as process from 'node:process';
 @Controller('dictionary')
 @UseGuards(JwtAuthGuard)
 export class DictionaryController {
@@ -108,4 +108,6 @@ export class DictionaryController {
     }
     return word;
   }
+
+
 }

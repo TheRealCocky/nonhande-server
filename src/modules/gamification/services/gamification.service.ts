@@ -37,14 +37,16 @@ export class GamificationService {
 
       if (heartsToAdd > 0) {
         const newHearts = Math.min(user.maxHearts, user.hearts + heartsToAdd);
-        const nextUpdate = new Date(lastUpdate.getTime() + (heartsToAdd * this.REGEN_TIME));
+        const nextUpdate = new Date(
+          lastUpdate.getTime() + heartsToAdd * this.REGEN_TIME,
+        );
 
         return await this.prisma.user.update({
           where: { id: userId },
           data: {
             hearts: newHearts,
-            lastHeartUpdate: newHearts === user.maxHearts ? now : nextUpdate
-          }
+            lastHeartUpdate: newHearts === user.maxHearts ? now : nextUpdate,
+          },
         });
       }
     }
@@ -63,18 +65,24 @@ export class GamificationService {
           include: {
             lessons: {
               orderBy: { order: 'asc' },
-              select: { id: true, title: true, order: true, xpReward: true, access: true }
-            }
-          }
-        }
-      }
+              select: {
+                id: true,
+                title: true,
+                order: true,
+                xpReward: true,
+                access: true,
+              },
+            },
+          },
+        },
+      },
     });
   }
 
   async getLessonDetails(lessonId: string) {
     const lesson = await this.prisma.lesson.findUnique({
       where: { id: lessonId },
-      include: { challenges: true }
+      include: { challenges: true },
     });
     if (!lesson) throw new NotFoundException('Lição não encontrada.');
     return lesson;
@@ -90,29 +98,40 @@ export class GamificationService {
     return this.prisma.unit.create({ data });
   }
 
-  async createLesson(data: { title: string; order: number; unitId: string; xpReward: number }) {
+  async createLesson(data: {
+    title: string;
+    order: number;
+    unitId: string;
+    xpReward: number;
+  }) {
     return this.prisma.lesson.create({ data });
   }
 
   async addChallenge(dto: CreateChallengeDto, audioFile?: Express.Multer.File) {
-    let content = typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
+    const content =
+      typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
 
     if (audioFile) {
       const lesson = await this.prisma.lesson.findUnique({
         where: { id: dto.lessonId },
-        include: { unit: { include: { level: true } } }
+        include: { unit: { include: { level: true } } },
       });
       const lang = lesson?.unit.level.language || 'nhaneca';
 
       const path = `${lang}/gamification/${Date.now()}-${audioFile.originalname.replace(/\s+/g, '_')}`;
 
       // ✅ CORREÇÃO: Usar 'audioFile' em vez de 'file'
-      const { error } = await this.supabase.storage.from(this.bucketName).upload(path, audioFile.buffer, {
-        contentType: audioFile.mimetype,
-      });
+      const { error } = await this.supabase.storage
+        .from(this.bucketName)
+        .upload(path, audioFile.buffer, {
+          contentType: audioFile.mimetype,
+        });
 
-      if (error) throw new BadRequestException(`Erro Supabase: ${error.message}`);
-      content.audioUrl = this.supabase.storage.from(this.bucketName).getPublicUrl(path).data.publicUrl;
+      if (error)
+        throw new BadRequestException(`Erro Supabase: ${error.message}`);
+      content.audioUrl = this.supabase.storage
+        .from(this.bucketName)
+        .getPublicUrl(path).data.publicUrl;
     }
 
     return this.prisma.challenge.create({
@@ -120,19 +139,21 @@ export class GamificationService {
         type: dto.type,
         question: dto.question,
         content: content,
-        lessonId: dto.lessonId
-      }
+        lessonId: dto.lessonId,
+      },
     });
   }
 
   // --- 4. PROCESSAMENTO DE RESULTADOS ---
 
   async completeLesson(userId: string, lessonId: string, score: number) {
-    const lesson = await this.prisma.lesson.findUnique({ where: { id: lessonId } });
+    const lesson = await this.prisma.lesson.findUnique({
+      where: { id: lessonId },
+    });
     if (!lesson) throw new NotFoundException('Lição não encontrada.');
 
     await this.prisma.userLesson.create({
-      data: { userId, lessonId, score }
+      data: { userId, lessonId, score },
     });
 
     if (score >= 60) {
@@ -141,10 +162,12 @@ export class GamificationService {
         data: {
           xp: { increment: lesson.xpReward },
           lastActive: new Date(),
-        }
+        },
       });
     }
 
-    return { message: 'Lição concluída, mas score insuficiente para recompensas.' };
+    return {
+      message: 'Lição concluída, mas score insuficiente para recompensas.',
+    };
   }
 }

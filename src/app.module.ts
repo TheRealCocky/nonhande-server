@@ -4,7 +4,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { DictionaryModule } from './modules/dictionary/dictionary.module';
-import { GamificationModule } from './modules/gamification/gamification.module'; // 1. Importa aqui
+import { GamificationModule } from './modules/gamification/gamification.module';
+import { HealthController } from './health/health.controller'; // 1. Importa aqui
 
 @Module({
   imports: [
@@ -14,6 +15,6 @@ import { GamificationModule } from './modules/gamification/gamification.module';
     DictionaryModule,
     GamificationModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, HealthController,],
 })
 export class AppModule {}
