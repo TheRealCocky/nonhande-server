@@ -7,26 +7,27 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- UTILIZADORES E PROGRESSÃO GLOBAL ---
+// --- UTILIZADORES (Adicionada a Role e Planos) ---
 model User {
-  id               String  @id @default(auto()) @map("_id") @db.ObjectId
-  name             String
-  email            String  @unique
-  password         String?
-  provider         String  @default("credentials")
-  googleId         String?
-  avatarUrl        String?
-  bio              String?
-  role             Role    @default(STUDENT)
-  isVerified       Boolean @default(false)
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String  @unique
+  password  String?
+  provider  String  @default("credentials")
+  googleId  String?
+  avatarUrl String?
+  bio       String?
+  role      Role    @default(STUDENT)
+
+  // Novo: Controle de Acesso e Planos
+  accessLevel      AccessType @default(FREE)
+  isVerified       Boolean    @default(false)
   verificationCode String?
 
-  // Atributos de Gamificação (Padrão Duolingo)
-  xp        Int @default(0)
-  hearts    Int @default(5)
-  maxHearts Int @default(5)
-
-  // ✅ CAMBIO: Adicionado '?' para não quebrar utilizadores antigos
+  // Gamificação
+  xp              Int       @default(0)
+  hearts          Int       @default(5)
+  maxHearts       Int       @default(5)
   lastHeartUpdate DateTime? @default(now())
 
   streak           Int       @default(0)
@@ -36,7 +37,6 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relações
   wordProgress   Progress[]
   lessonProgress UserLesson[]
   calls          Call[]       @relation("UserCalls")
@@ -48,31 +48,27 @@ enum Role {
   STUDENT
 }
 
-// --- DICIONÁRIO (O ACERVO - INTACTO) ---
+// --- DICIONÁRIO (MANTIDO CONFORME PEDIDO) ---
 model Word {
-  id              String  @id @default(auto()) @map("_id") @db.ObjectId
+  id              String     @id @default(auto()) @map("_id") @db.ObjectId
   term            String
   infinitive      String?
   meaning         String
-  language        String  @default("Nhaneca-Humbe")
+  language        String     @default("Nhaneca-Humbe")
   category        String
   grammaticalType String?
-
-  audioUrl String?
-  imageUrl String?
-  phonetic String?
-  duration Float?
-
-  culturalNote String?
-  searchTags   String[]
-  tags         String[]
-  synonyms     String[]
-
-  examples     Example[]
-  wordProgress Progress[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  audioUrl        String?
+  imageUrl        String?
+  phonetic        String?
+  duration        Float?
+  culturalNote    String?
+  searchTags      String[]
+  tags            String[]
+  synonyms        String[]
+  examples        Example[]
+  wordProgress    Progress[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 }
 
 model Example {
@@ -80,12 +76,11 @@ model Example {
   text        String
   translation String
   audioUrl    String?
-
-  wordId String @db.ObjectId
-  word   Word   @relation(fields: [wordId], references: [id], onDelete: Cascade)
+  wordId      String  @db.ObjectId
+  word        Word    @relation(fields: [wordId], references: [id], onDelete: Cascade)
 }
 
-// --- ESTRUTURA DE GAMIFICAÇÃO (PURIFICADA PARA MULTI-LÍNGUA) ---
+// --- ESTRUTURA DE GAMIFICAÇÃO REESTRUTURADA ---
 
 model Level {
   id          String  @id @default(auto()) @map("_id") @db.ObjectId
@@ -122,29 +117,39 @@ model Lesson {
   unitId String @db.ObjectId
   unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
-  challenges  Challenge[]
+  // Mudança: De 'challenges' para 'activities' para incluir Teoria
+  activities  Activity[]
   userHistory UserLesson[]
   createdAt   DateTime     @default(now())
 }
 
-model Challenge {
-  id       String        @id @default(auto()) @map("_id") @db.ObjectId
-  type     ChallengeType
+model Activity {
+  id    String       @id @default(auto()) @map("_id") @db.ObjectId
+  order Int // Define a sequência: Teoria (1), Teoria (2), Desafio (3)...
+  type  ActivityType
+
+  // O campo question pode ser usado como título da Teoria ou pergunta do Desafio
   question String
 
-  content Json // { "options": [], "correct": "", "audioUrl": "" }
+  // JSON flexível para suportar:
+  // Teoria: { "body": "Explicação aqui", "image": "url" }
+  // Desafio Imagem: { "imageCorrect": "url", "imageWrong": "url", "correctAnswer": "..." }
+  // Outros: { "options": [], "correct": "", "audioUrl": "" }
+  content Json
 
   lessonId  String   @db.ObjectId
   lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 }
 
-enum ChallengeType {
-  SELECT
-  TRANSLATE
-  ORDER
-  PAIRS
-  VOICE
+enum ActivityType {
+  THEORY // Apenas conteúdo, não tira corações
+  SELECT // Múltipla escolha
+  TRANSLATE // Tradução
+  ORDER // Ordenar palavras
+  PAIRS // Combinar pares
+  VOICE // Reconhecimento de fala (Whisper)
+  IMAGE_CHECK // O novo tipo: Duas imagens (Certa vs Errada)
 }
 
 enum AccessType {
@@ -153,7 +158,7 @@ enum AccessType {
   ENTERPRISE
 }
 
-// --- REGISTOS DE PROGRESSO ---
+// --- REGISTOS E COMUNICAÇÃO (MANTIDOS) ---
 
 model UserLesson {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
@@ -161,9 +166,8 @@ model UserLesson {
   lessonId    String   @db.ObjectId
   completedAt DateTime @default(now())
   score       Int
-
-  user   User   @relation(fields: [userId], references: [id])
-  lesson Lesson @relation(fields: [lessonId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+  lesson      Lesson   @relation(fields: [lessonId], references: [id])
 }
 
 model Progress {
@@ -173,18 +177,15 @@ model Progress {
   level      Int      @default(0)
   mastered   Boolean  @default(false)
   lastReview DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-  word Word @relation(fields: [wordId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
+  word       Word     @relation(fields: [wordId], references: [id])
 }
 
-// --- COMUNICAÇÃO ---
 model Call {
   id        String    @id @default(auto()) @map("_id") @db.ObjectId
   callerId  String    @db.ObjectId
   calleeId  String    @db.ObjectId
   startedAt DateTime  @default(now())
   endedAt   DateTime?
-
-  user User @relation("UserCalls", fields: [callerId], references: [id])
+  user      User      @relation("UserCalls", fields: [callerId], references: [id])
 }

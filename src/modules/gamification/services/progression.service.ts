@@ -10,131 +10,98 @@ import { CompleteLessonDto } from '../dto/complete-lesson.dto';
 export class ProgressionService {
   constructor(private prisma: PrismaService) {}
 
-  private readonly REGEN_TIME_PER_HEART = 24 * 60 * 1000;
+  private readonly REGEN_TIME = 24 * 60 * 1000; // 24 minutos
 
-  async processLessonCompletion(dto: CompleteLessonDto) {
-    const { userId, lessonId, score } = dto;
-    const user = await this.computeAndGetUpdatedUser(userId);
-
-    const lesson = await this.prisma.lesson.findUnique({ where: { id: lessonId } });
-    if (!lesson) throw new NotFoundException('Lição não encontrada.');
-
-    if (score < 60) {
-      const updatedUser = await this.loseHeart(userId);
-      return {
-        success: false,
-        message: 'Pontuação insuficiente. Perdeste um coração!',
-        heartsRemaining: updatedUser.hearts,
-        xpGained: 0
-      };
-    }
-
-    const finalUser = await this.updateUserStats(user, lesson.xpReward);
-
-    await this.prisma.userLesson.create({
-      data: { userId, lessonId, score }
-    });
-
-    return {
-      success: true,
-      message: 'Lição concluída!',
-      xpGained: lesson.xpReward,
-      currentXp: finalUser.xp,
-      currentStreak: finalUser.streak,
-      hearts: finalUser.hearts
-    };
-  }
-
-  async computeAndGetUpdatedUser(userId: string) {
+  async getOrSyncStatus(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('Usuário não encontrado.');
+    if (!user) throw new NotFoundException('Usuário não encontrado');
 
     if (user.hearts < user.maxHearts) {
       const now = new Date();
-      // ✅ CORREÇÃO: Fallback para 'now' se for null
       const lastUpdate = user.lastHeartUpdate || now;
       const elapsed = now.getTime() - lastUpdate.getTime();
-      const heartsToAdd = Math.floor(elapsed / this.REGEN_TIME_PER_HEART);
+      const heartsToAdd = Math.floor(elapsed / this.REGEN_TIME);
 
       if (heartsToAdd > 0) {
         const newHearts = Math.min(user.maxHearts, user.hearts + heartsToAdd);
-        const nextUpdate = new Date(lastUpdate.getTime() + (heartsToAdd * this.REGEN_TIME_PER_HEART));
+        const nextUpdate = new Date(lastUpdate.getTime() + heartsToAdd * this.REGEN_TIME);
 
         return await this.prisma.user.update({
           where: { id: userId },
           data: {
             hearts: newHearts,
-            lastHeartUpdate: newHearts === user.maxHearts ? now : nextUpdate
-          }
+            lastHeartUpdate: newHearts === user.maxHearts ? now : nextUpdate,
+          },
         });
       }
     }
     return user;
   }
 
-  public async loseHeart(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('Usuário não encontrado');
+  async handleLoss(userId: string) {
+    const user = await this.getOrSyncStatus(userId);
+    if (user.hearts <= 0) throw new BadRequestException('Sem corações!');
 
-    if (user.hearts <= 0) {
-      throw new BadRequestException('Estás sem corações! Aguarda a regeneração.');
-    }
-
-    return await this.prisma.user.update({
+    return this.prisma.user.update({
       where: { id: userId },
       data: {
         hearts: { decrement: 1 },
         lastHeartUpdate: user.hearts === user.maxHearts ? new Date() : undefined
-      }
+      },
     });
   }
 
-  private async updateUserStats(user: any, xpReward: number) {
-    const now = new Date();
-    let newStreak = user.streak;
+  /**
+   * ✅ PROCESSA CONCLUSÃO DE LIÇÃO
+   * Gere XP, Streak e regista o histórico.
+   */
+  async processLessonCompletion(dto: CompleteLessonDto) {
+    const { userId, lessonId, score } = dto;
+    const user = await this.getOrSyncStatus(userId);
+    const lesson = await this.prisma.lesson.findUnique({ where: { id: lessonId } });
 
-    if (!user.lastStreakUpdate) {
-      newStreak = 1;
-    } else {
-      const lastUpdate = new Date(user.lastStreakUpdate);
-      const diffInHours = (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60);
+    if (!lesson) throw new NotFoundException('Lição não encontrada');
 
-      if (diffInHours >= 24 && diffInHours <= 48) {
-        newStreak += 1;
-      } else if (diffInHours > 48) {
+    // Se o score for baixo, o aluno não ganha recompensas (pode perder vida via frontend/mistake)
+    if (score < 60) {
+      return { success: false, message: 'Score insuficiente para XP.' };
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Calcular nova Streak
+      const now = new Date();
+      let newStreak = user.streak;
+
+      if (!user.lastStreakUpdate) {
         newStreak = 1;
+      } else {
+        const diffHours = (now.getTime() - user.lastStreakUpdate.getTime()) / (1000 * 3600);
+        if (diffHours >= 24 && diffHours <= 48) newStreak += 1;
+        else if (diffHours > 48) newStreak = 1;
       }
-    }
 
-    return await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        xp: { increment: xpReward },
-        streak: newStreak,
-        lastStreakUpdate: now,
-        lastActive: now
-      }
+      // 2. Registar lição concluída
+      await tx.userLesson.create({
+        data: { userId, lessonId, score }
+      });
+
+      // 3. Atualizar utilizador
+      const updatedUser = await tx.user.update({
+        where: { id: userId },
+        data: {
+          xp: { increment: lesson.xpReward },
+          streak: newStreak,
+          lastStreakUpdate: now,
+          lastActive: now
+        }
+      });
+
+      return {
+        success: true,
+        xpGained: lesson.xpReward,
+        newTotalXp: updatedUser.xp,
+        streak: updatedUser.streak
+      };
     });
-  }
-
-  async getFullStatus(userId: string) {
-    const user = await this.computeAndGetUpdatedUser(userId);
-    const now = new Date();
-    // ✅ CORREÇÃO: Fallback para 'now' se for null
-    const lastUpdate = user.lastHeartUpdate || now;
-    const elapsed = now.getTime() - lastUpdate.getTime();
-
-    let nextHeartIn = 0;
-    if (user.hearts < user.maxHearts) {
-      nextHeartIn = Math.floor((this.REGEN_TIME_PER_HEART - (elapsed % this.REGEN_TIME_PER_HEART)) / 1000);
-    }
-
-    return {
-      hearts: user.hearts,
-      maxHearts: user.maxHearts,
-      xp: user.xp,
-      streak: user.streak,
-      nextHeartInSeconds: nextHeartIn
-    };
   }
 }

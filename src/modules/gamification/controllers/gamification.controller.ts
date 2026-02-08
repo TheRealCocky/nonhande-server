@@ -6,99 +6,75 @@ import {
   Param,
   UseGuards,
   UseInterceptors,
-  UploadedFile,
+  UploadedFiles,
   Query,
   ValidationPipe,
-  UsePipes
+  UsePipes,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { GamificationService } from '../services/gamification.service'; // 🚀 Import corrigido
-import { ProgressionService } from '../services/progression.service'; // 🚀 Adicionado para gerir vidas
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { GamificationService } from '../services/gamification.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
-import { CompleteLessonDto } from '../dto/complete-lesson.dto';
-import { CreateChallengeDto } from '../dto/create-challenge.dto';
 
 @Controller('gamification')
 @UseGuards(JwtAuthGuard)
 @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
 export class GamificationController {
-  constructor(
-    private readonly gamificationService: GamificationService,
-    private readonly progressionService: ProgressionService,
-  ) {}
+  constructor(private readonly gamificationService: GamificationService) {}
 
-  // --- 🧑‍🎓 ÁREA DO ESTUDANTE (GAMEPLAY) ---
+  // --- 🧑‍🎓 ÁREA DO ESTUDANTE ---
 
-  /**
-   * Status de Vidas, XP e Streak
-   * O Frontend chama isto para atualizar o Header com o timer regressivo
-   */
-  @Get('status/:userId')
-  async getStatus(@Param('userId') userId: string) {
-    return this.progressionService.getFullStatus(userId);
-  }
-
-  /**
-   * Mapa da Trilha (Levels -> Units -> Lessons)
-   * Ex: GET /gamification/trail?lang=nhaneca
-   */
   @Get('trail')
   async getTrail(@Query('lang') lang: string) {
     return this.gamificationService.getTrail(lang || 'nhaneca');
   }
 
-  /**
-   * Carregar lição e os seus desafios (exercícios)
-   */
   @Get('lesson/:id')
   async getLesson(@Param('id') id: string) {
     return this.gamificationService.getLessonDetails(id);
   }
 
-  /**
-   * Finalizar lição: Calcula se ganhou XP ou perdeu vida
-   */
-  @Post('complete')
-  async complete(@Body() dto: CompleteLessonDto) {
-    return this.progressionService.processLessonCompletion(dto);
-  }
-
-  // --- 🛠️ ÁREA DO TEACHER/ADMIN (CONTEÚDO) ---
+  // --- 🛠️ ÁREA DO TEACHER/ADMIN ---
 
   @Post('level')
   @Roles('ADMIN')
   @UseGuards(RolesGuard)
-  async createLevel(@Body() data: any) {
+  async createLevel(@Body() data: { title: string; order: number; language: string }) {
     return this.gamificationService.createLevel(data);
   }
 
   @Post('unit')
   @Roles('ADMIN', 'TEACHER')
   @UseGuards(RolesGuard)
-  async createUnit(@Body() data: any) {
+  async createUnit(@Body() data: { title: string; order: number; levelId: string }) {
     return this.gamificationService.createUnit(data);
   }
 
   @Post('lesson')
   @Roles('ADMIN', 'TEACHER')
   @UseGuards(RolesGuard)
-  async createLesson(@Body() data: any) {
+  async createLesson(@Body() data: { title: string; order: number; unitId: string; xpReward: number }) {
     return this.gamificationService.createLesson(data);
   }
 
   /**
-   * Criar Desafio com Upload de Áudio para o Supabase
+   * CRIAÇÃO DE ATIVIDADE (Teoria ou Desafio)
+   * Suporta 1 áudio e até 2 imagens (para o modo IMAGE_CHECK)
    */
-  @Post('challenge')
+  @Post('activity')
   @Roles('ADMIN', 'TEACHER')
   @UseGuards(RolesGuard)
-  @UseInterceptors(FileInterceptor('audio'))
-  async createChallenge(
-    @Body() dto: CreateChallengeDto,
-    @UploadedFile() audio?: Express.Multer.File
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'audio', maxCount: 1 },
+      { name: 'images', maxCount: 2 },
+    ]),
+  )
+  async createActivity(
+    @Body() dto: any, // Recomendo criar um CreateActivityDto
+    @UploadedFiles() files: { audio?: Express.Multer.File[]; images?: Express.Multer.File[] },
   ) {
-    return this.gamificationService.addChallenge(dto, audio);
+    return this.gamificationService.addActivity(dto, files);
   }
 }

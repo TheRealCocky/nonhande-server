@@ -18,38 +18,40 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 export class ProgressionController {
   constructor(private readonly progressionService: ProgressionService) {}
 
-  /**
-   * 💓 STATUS COMPLETO (Vidas + Timer + Streak + XP)
-   * Essencial para o Header do Next.js.
-   * Recalcula as vidas automaticamente ao ser chamado.
-   */
   @Get('status/:userId')
   async getStatus(@Param('userId') userId: string) {
-    // O método getFullStatus no Service já chama internamente
-    // a regeneração de corações baseada no tempo.
-    return this.progressionService.getFullStatus(userId);
+    const user = await this.progressionService.getOrSyncStatus(userId);
+
+    const now = new Date();
+    const lastUpdate = user.lastHeartUpdate || now;
+    const elapsed = now.getTime() - lastUpdate.getTime();
+    const REGEN_TIME = 24 * 60 * 1000;
+
+    let nextHeartInSeconds = 0;
+    if (user.hearts < user.maxHearts) {
+      nextHeartInSeconds = Math.max(0, Math.floor((REGEN_TIME - (elapsed % REGEN_TIME)) / 1000));
+    }
+
+    return {
+      hearts: user.hearts,
+      maxHearts: user.maxHearts,
+      xp: user.xp,
+      streak: user.streak,
+      nextHeartInSeconds
+    };
   }
 
-  /**
-   * ✅ FINALIZAR LIÇÃO (Sucesso ou Falha)
-   * Decide se o aluno ganha XP ou perde vida baseado no Score.
-   */
   @Post('complete')
   async completeLesson(@Body() dto: CompleteLessonDto) {
     return this.progressionService.processLessonCompletion(dto);
   }
 
-  /**
-   * 💔 PERDER VIDA (Erro em tempo real)
-   * Chamado pelo Frontend assim que o usuário erra um desafio "crítico".
-   */
   @Post('mistake/:userId')
   async handleMistake(@Param('userId') userId: string) {
-    const updatedUser = await this.progressionService.loseHeart(userId);
+    const updatedUser = await this.progressionService.handleLoss(userId);
     return {
       message: 'Vida perdida!',
-      heartsRemaining: updatedUser.hearts,
-      lastHeartUpdate: updatedUser.lastHeartUpdate
+      heartsRemaining: updatedUser.hearts
     };
   }
 }

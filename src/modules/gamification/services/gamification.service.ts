@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { createClient } from '@supabase/supabase-js';
-import { CreateChallengeDto } from '../dto/create-challenge.dto';
+import { ActivityType } from '@prisma/client';
 
 @Injectable()
 export class GamificationService {
@@ -18,28 +18,21 @@ export class GamificationService {
 
   constructor(private prisma: PrismaService) {}
 
-  // --- 1. GESTÃO DE STATUS E VIDAS ---
-
+  // --- 1. GESTÃO DE STATUS E VIDAS (Sincronização Profissional) ---
   async getUserStatus(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
-    /** * Nota: Se após o 'npx prisma generate' o erro persistir,
-     * use (user as any).hearts para forçar a tipagem, mas o ideal
-     * é o Prisma reconhecer o novo Schema.
-     */
-    // Localiza esta parte no getUserStatus
     if (user.hearts < user.maxHearts) {
       const now = new Date();
-      const lastUpdate = user.lastHeartUpdate || now; // Se for null, usa 'now'
+      const lastUpdate = user.lastHeartUpdate || now;
       const elapsed = now.getTime() - lastUpdate.getTime();
       const heartsToAdd = Math.floor(elapsed / this.REGEN_TIME);
 
       if (heartsToAdd > 0) {
         const newHearts = Math.min(user.maxHearts, user.hearts + heartsToAdd);
-        const nextUpdate = new Date(
-          lastUpdate.getTime() + heartsToAdd * this.REGEN_TIME,
-        );
+        // Calcula o próximo tick de regeneração baseado no tempo que sobrou
+        const nextUpdate = new Date(lastUpdate.getTime() + heartsToAdd * this.REGEN_TIME);
 
         return await this.prisma.user.update({
           where: { id: userId },
@@ -53,8 +46,7 @@ export class GamificationService {
     return user;
   }
 
-  // --- 2. NAVEGAÇÃO E TRILHA ---
-
+  // --- 2. NAVEGAÇÃO E TRILHA (Com suporte a AccessType) ---
   async getTrail(language: string) {
     return this.prisma.level.findMany({
       where: { language: language.toLowerCase() },
@@ -70,7 +62,7 @@ export class GamificationService {
                 title: true,
                 order: true,
                 xpReward: true,
-                access: true,
+                access: true, // Importante para o cadeado Premium
               },
             },
           },
@@ -82,13 +74,17 @@ export class GamificationService {
   async getLessonDetails(lessonId: string) {
     const lesson = await this.prisma.lesson.findUnique({
       where: { id: lessonId },
-      include: { challenges: true },
+      include: {
+        activities: { // Atualizado de challenges para activities
+          orderBy: { order: 'asc' }
+        }
+      },
     });
     if (!lesson) throw new NotFoundException('Lição não encontrada.');
     return lesson;
   }
 
-  // --- 3. CRIAÇÃO DE CONTEÚDO ---
+  // --- 3. CRIAÇÃO DE CONTEÚDO (Suporte a Teoria e 2 Imagens) ---
 
   async createLevel(data: { title: string; order: number; language: string }) {
     return this.prisma.level.create({ data });
@@ -107,36 +103,45 @@ export class GamificationService {
     return this.prisma.lesson.create({ data });
   }
 
-  async addChallenge(dto: CreateChallengeDto, audioFile?: Express.Multer.File) {
-    const content =
-      typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
+  /**
+   * Adiciona uma Atividade (Pode ser Teoria ou Desafio)
+   * Suporta upload de áudio e múltiplas imagens (para o modo IMAGE_CHECK)
+   */
+  async addActivity(
+    dto: any,
+    files?: { audio?: Express.Multer.File[], images?: Express.Multer.File[] }
+  ) {
+    const content = typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
 
-    if (audioFile) {
-      const lesson = await this.prisma.lesson.findUnique({
-        where: { id: dto.lessonId },
-        include: { unit: { include: { level: true } } },
-      });
-      const lang = lesson?.unit.level.language || 'nhaneca';
-
-      const path = `${lang}/gamification/${Date.now()}-${audioFile.originalname.replace(/\s+/g, '_')}`;
-
-      // ✅ CORREÇÃO: Usar 'audioFile' em vez de 'file'
-      const { error } = await this.supabase.storage
-        .from(this.bucketName)
-        .upload(path, audioFile.buffer, {
-          contentType: audioFile.mimetype,
-        });
-
-      if (error)
-        throw new BadRequestException(`Erro Supabase: ${error.message}`);
-      content.audioUrl = this.supabase.storage
-        .from(this.bucketName)
-        .getPublicUrl(path).data.publicUrl;
+    // 1. Processamento de Áudio
+    if (files?.audio && files.audio[0]) {
+      const audioPath = `gamification/audio/${Date.now()}_${files.audio[0].originalname}`;
+      content.audioUrl = await this.uploadToSupabase(audioPath, files.audio[0]);
     }
 
-    return this.prisma.challenge.create({
+    // 2. Processamento de Imagens (Suporte para 1 ou 2 imagens)
+    if (files?.images && files.images.length > 0) {
+      const uploadedUrls = await Promise.all(
+        files.images.map(async (img, idx) => {
+          const path = `gamification/visual/${Date.now()}_idx${idx}_${img.originalname}`;
+          return await this.uploadToSupabase(path, img);
+        })
+      );
+
+      if (dto.type === ActivityType.IMAGE_CHECK) {
+        // No modo IMAGE_CHECK, a primeira imagem enviada é a Certa, a segunda é a Errada
+        content.imageCorrect = uploadedUrls[0];
+        content.imageWrong = uploadedUrls[1] || null;
+      } else {
+        // Para THEORY ou outros tipos, usa apenas a primeira imagem
+        content.imageUrl = uploadedUrls[0];
+      }
+    }
+
+    return this.prisma.activity.create({
       data: {
         type: dto.type,
+        order: Number(dto.order),
         question: dto.question,
         content: content,
         lessonId: dto.lessonId,
@@ -144,30 +149,43 @@ export class GamificationService {
     });
   }
 
-  // --- 4. PROCESSAMENTO DE RESULTADOS ---
+  private async uploadToSupabase(
+    path: string,
+    file: Express.Multer.File,
+  ): Promise<string> {
+    const { error } = await this.supabase.storage
+      .from(this.bucketName)
+      .upload(path, file.buffer, { contentType: file.mimetype });
 
+    if (error) throw new BadRequestException(`Erro Supabase: ${error.message}`);
+
+    return this.supabase.storage.from(this.bucketName).getPublicUrl(path).data.publicUrl;
+  }
+
+  // --- 4. PROCESSAMENTO DE RESULTADOS (Com Transação) ---
   async completeLesson(userId: string, lessonId: string, score: number) {
     const lesson = await this.prisma.lesson.findUnique({
       where: { id: lessonId },
     });
     if (!lesson) throw new NotFoundException('Lição não encontrada.');
 
-    await this.prisma.userLesson.create({
-      data: { userId, lessonId, score },
-    });
-
-    if (score >= 60) {
-      return this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          xp: { increment: lesson.xpReward },
-          lastActive: new Date(),
-        },
+    // Usamos Transação para garantir que XP e Histórico sejam salvos juntos
+    return this.prisma.$transaction(async (tx) => {
+      await tx.userLesson.create({
+        data: { userId, lessonId, score },
       });
-    }
 
-    return {
-      message: 'Lição concluída, mas score insuficiente para recompensas.',
-    };
+      if (score >= 60) {
+        return tx.user.update({
+          where: { id: userId },
+          data: {
+            xp: { increment: lesson.xpReward },
+            lastActive: new Date(),
+          },
+        });
+      }
+
+      return { message: 'Lição concluída, mas score baixo.' };
+    });
   }
 }

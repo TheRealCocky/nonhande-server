@@ -1,99 +1,89 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# 🛡️ Nonhande: Linguística, Gamificação & Inteligência Artificial
+> **Arquitetura de Preservação e Ensino da Língua Nhaneca-Humbe via NLP e Gamificação Contextual.**
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A Nonhande não é apenas uma aplicação de línguas; é um ecossistema de inteligência linguística projetado para digitalizar, preservar e ensinar línguas ancestrais angolanas. O sistema utiliza uma arquitetura escalável preparada para comercialização de APIs (B2B) e ensino personalizado (B2C).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## 🏗️ Arquitetura do Sistema
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+A aplicação está construída sobre uma infraestrutura moderna, separando a lógica de negócio da camada de inteligência artificial, permitindo escalabilidade horizontal.
 
-## Project setup
+
+
+### 1. Camada de Dados (Persistence Layer)
+Utilizamos **MongoDB** com **Prisma ORM** para suportar a natureza flexível e extensível dos dados linguísticos.
+* **User Engine**: Gere o estado global do aluno (XP, Streak, Hearts).
+* **Curriculum Engine**: Estrutura de grafos para `Level -> Unit -> Lesson -> Activity`.
+* **Dictionary Engine**: Acervo lexical com metadados culturais, fonéticos e relacionamentos semânticos entre exemplos.
+
+### 2. Metodologia Pedagógica: Teoria-Prática
+O motor de jogo foi reestruturado para evitar a "aprendizagem por tentativa e erro".
+1.  **Exposição (THEORY)**: Blocos de conteúdo explicativo (Markdown/Imagens/Áudio) que não penalizam o utilizador.
+2.  **Desafio (CHALLENGE)**: Testes de validação (Múltipla escolha, tradução, ordenação).
+3.  **Reforço Visual**: Suporte a atividades de comparação de imagens (Certa vs Errada) com integração direta via **Supabase Storage**.
+
+---
+
+## 👥 Modelo de Governança e Roles (RBAC)
+
+O sistema implementa um controlo de acesso baseado em funções (Role-Based Access Control) para garantir a integridade dos dados.
+
+| Role | Escopo de Atuação | Funcionalidades Chave |
+| :--- | :--- | :--- |
+| **ADMIN** | Infraestrutura & Negócio | Monitorização de Quotas, Gestão de API Keys Enterprise, Logs de Erro. |
+| **TEACHER** | Curadoria de Conteúdo | Upload de mídias para Supabase, Gestão do Dicionário, Criação de Atividades. |
+| **STUDENT** | Utilizador Final | Progressão no mapa, Pesquisa no Dicionário, Consumo de Conteúdo. |
+
+---
+
+## 💰 Estratégia Comercial (Tiering & Monetização)
+
+O backend utiliza middlewares de validação para aplicar restrições de uso conforme o plano do utilizador:
+
+### 🥉 Freemium (MVP)
+* Acesso aos Módulos introdutórios (até Módulo 1).
+* **Quota de Dicionário**: Máximo de 10 pesquisas diárias.
+* **Mídia**: Acesso limitado a 2 audições de áudio/dia.
+
+### 🥈 Premium (B2C)
+* Acesso ilimitado a todos os Módulos (incluindo Módulo 2 com IA de Voz).
+* Ferramentas de Voz: Integração com **Whisper** para análise de pronúncia.
+* Dicionário sem restrições e offline-ready.
+
+### 🥇 Enterprise (B2B / API)
+* **API Commercial Access**: Endpoints para integração em sistemas de terceiros.
+* **Doc Generation**: Geração de documentos oficiais e entrepasses via **LlamaIndex** e **Hugging Face**.
+* **Custom Models**: Acesso a modelos de Chatbot treinados em corpora específicos da região.
+
+---
+
+## 🛠️ Stack Tecnológica & IA
+
+* **Runtime**: Node.js / Next.js (Serverless Functions).
+* **Database**: MongoDB (via Prisma).
+* **Storage**: Supabase Storage (Mídias auditadas).
+* **AI Engine (Fase 2)**:
+    * **Whisper**: Processamento de áudio em tempo real para o Módulo 2.
+    * **LlamaIndex**: Indexação de conhecimento para RAG (Retrieval-Augmented Generation).
+    * **Hugging Face**: Modelos de tradução e sumarização.
+
+---
+
+## 📂 Estrutura de Pastas (Clean Architecture)
 
 ```bash
-$ npm install
-```
-
-## Compile and run the project
-
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
-# nonhande-server
+├── prisma/                 # Schema, enums e definições de banco de dados
+├── src/
+│   ├── api/
+│   │   ├── middleware/     # Guardas de Autenticação e Rate-Limiting (Quotas)
+│   │   ├── controllers/    # Lógica de Gamificação (XP, Hearts update)
+│   │   └── services/       # Integrações (Supabase, Whisper, LLMs)
+│   ├── modules/
+│   │   ├── dictionary/     # Lógica de pesquisa e hiperlinks de exemplos
+│   │   ├── gamification/   # Motor de progresso Teoria-Desafio
+│   │   └── ai-hub/         # Conexão com LlamaIndex e Hugging Face
+│   └── lib/
+│       ├── prisma.ts       # Singleton do Prisma Client
+│       └── supabase.ts     # SDK para Upload Direto (Teacher Role)
+└── README.md
