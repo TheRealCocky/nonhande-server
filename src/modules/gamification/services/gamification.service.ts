@@ -112,6 +112,17 @@ export class GamificationService {
     dto: any,
     files?: { audio?: Express.Multer.File[]; images?: Express.Multer.File[] },
   ) {
+    // 1. LOG DE SEGURANÇA: Verifica no teu terminal o que está a chegar no lessonId
+    console.log("DEBUG: Recebendo lessonId:", dto.lessonId);
+
+    // Validação crítica: Se o lessonId for a string "undefined" ou estiver vazio
+    if (!dto.lessonId || dto.lessonId === 'undefined') {
+      throw new BadRequestException(
+        'O lessonId fornecido é inválido ou não foi enviado corretamente no FormData.'
+      );
+    }
+
+    // Parse do conteúdo se vier como string (comum em FormData)
     const content = typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
 
     // 1. Processamento de Áudio
@@ -120,7 +131,7 @@ export class GamificationService {
       content.audioUrl = await this.uploadToSupabase(audioPath, files.audio[0]);
     }
 
-    // 2. Processamento de Imagens (Suporte para 1 ou 2 imagens)
+    // 2. Processamento de Imagens
     if (files?.images && files.images.length > 0) {
       const uploadedUrls = await Promise.all(
         files.images.map(async (img, idx) => {
@@ -130,22 +141,21 @@ export class GamificationService {
       );
 
       if (dto.type === ActivityType.IMAGE_CHECK) {
-        // No modo IMAGE_CHECK, a primeira imagem enviada é a Certa, a segunda é a Errada
         content.imageCorrect = uploadedUrls[0];
         content.imageWrong = uploadedUrls[1] || null;
       } else {
-        // Para THEORY ou outros tipos, usa apenas a primeira imagem
         content.imageUrl = uploadedUrls[0];
       }
     }
 
+    // 3. CRIAÇÃO COM TIPAGEM FORÇADA
     return this.prisma.activity.create({
       data: {
         type: dto.type,
         order: Number(dto.order),
         question: dto.question,
         content: content,
-        lessonId: dto.lessonId,
+        lessonId: dto.lessonId.trim(), // Limpa espaços em branco acidentais
       },
     });
   }
