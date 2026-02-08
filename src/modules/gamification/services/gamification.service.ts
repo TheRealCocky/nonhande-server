@@ -6,7 +6,8 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { createClient } from '@supabase/supabase-js';
 import { ActivityType } from '@prisma/client';
-
+import { UpdateLessonDto } from '../dto/update-lesson.dto';
+import { UpdateLevelDto } from '../dto/update-level.dto';
 @Injectable()
 export class GamificationService {
   private supabase = createClient(
@@ -109,7 +110,7 @@ export class GamificationService {
    */
   async addActivity(
     dto: any,
-    files?: { audio?: Express.Multer.File[], images?: Express.Multer.File[] }
+    files?: { audio?: Express.Multer.File[]; images?: Express.Multer.File[] },
   ) {
     const content = typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
 
@@ -187,5 +188,17 @@ export class GamificationService {
 
       return { message: 'Lição concluída, mas score baixo.' };
     });
+  }
+  async deleteLevel(id: string) {
+    return this.prisma.level.delete({ where: { id } });
+  }
+  async updateLevel(id: string, data: UpdateLevelDto){
+    return this.prisma.level.update({ where: { id }, data });
+  }
+  async deleteLesson(id: string) {
+    return this.prisma.lesson.delete({ where: { id } });
+  }
+  async updateLesson(id: string, data: UpdateLessonDto) {
+    return this.prisma.lesson.update({ where: { id }, data });
   }
 }

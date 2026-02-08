@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Body,
   Param,
   UseGuards,
@@ -16,6 +18,10 @@ import { GamificationService } from '../services/gamification.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
+
+// Importação dos DTOs corrigida (assumindo que saímos de controllers/ para a raiz do módulo e entramos em dto/)
+import { UpdateLevelDto } from '../dto/update-level.dto';
+import { UpdateLessonDto } from '../dto/update-lesson.dto';
 
 @Controller('gamification')
 @UseGuards(JwtAuthGuard)
@@ -37,6 +43,7 @@ export class GamificationController {
 
   // --- 🛠️ ÁREA DO TEACHER/ADMIN ---
 
+  // NÍVEIS
   @Post('level')
   @Roles('ADMIN')
   @UseGuards(RolesGuard)
@@ -44,6 +51,21 @@ export class GamificationController {
     return this.gamificationService.createLevel(data);
   }
 
+  @Patch('level/:id')
+  @Roles('ADMIN')
+  @UseGuards(RolesGuard)
+  async updateLevel(@Param('id') id: string, @Body() data: UpdateLevelDto) {
+    return this.gamificationService.updateLevel(id, data);
+  }
+
+  @Delete('level/:id')
+  @Roles('ADMIN')
+  @UseGuards(RolesGuard)
+  async deleteLevel(@Param('id') id: string) {
+    return this.gamificationService.deleteLevel(id);
+  }
+
+  // UNIDADES
   @Post('unit')
   @Roles('ADMIN', 'TEACHER')
   @UseGuards(RolesGuard)
@@ -51,11 +73,34 @@ export class GamificationController {
     return this.gamificationService.createUnit(data);
   }
 
+  // LIÇÕES
   @Post('lesson')
   @Roles('ADMIN', 'TEACHER')
   @UseGuards(RolesGuard)
-  async createLesson(@Body() data: { title: string; order: number; unitId: string; xpReward: number }) {
+  async createLesson(
+    @Body()
+    data: {
+      title: string;
+      order: number;
+      unitId: string;
+      xpReward: number;
+    },
+  ) {
     return this.gamificationService.createLesson(data);
+  }
+
+  @Patch('lesson/:id')
+  @Roles('ADMIN', 'TEACHER')
+  @UseGuards(RolesGuard)
+  async updateLesson(@Param('id') id: string, @Body() data: UpdateLessonDto) {
+    return this.gamificationService.updateLesson(id, data);
+  }
+
+  @Delete('lesson/:id')
+  @Roles('ADMIN', 'TEACHER')
+  @UseGuards(RolesGuard)
+  async deleteLesson(@Param('id') id: string) {
+    return this.gamificationService.deleteLesson(id);
   }
 
   /**
@@ -72,7 +117,7 @@ export class GamificationController {
     ]),
   )
   async createActivity(
-    @Body() dto: any, // Recomendo criar um CreateActivityDto
+    @Body() dto: any,
     @UploadedFiles() files: { audio?: Express.Multer.File[]; images?: Express.Multer.File[] },
   ) {
     return this.gamificationService.addActivity(dto, files);
