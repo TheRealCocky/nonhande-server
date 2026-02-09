@@ -7,7 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- UTILIZADORES (Adicionada a Role e Planos) ---
+// --- UTILIZADORES ---
 model User {
   id        String  @id @default(auto()) @map("_id") @db.ObjectId
   name      String
@@ -19,7 +19,6 @@ model User {
   bio       String?
   role      Role    @default(STUDENT)
 
-  // Novo: Controle de Acesso e Planos
   accessLevel      AccessType @default(FREE)
   isVerified       Boolean    @default(false)
   verificationCode String?
@@ -48,7 +47,7 @@ enum Role {
   STUDENT
 }
 
-// --- DICIONÁRIO (MANTIDO CONFORME PEDIDO) ---
+// --- DICIONÁRIO (MANTIDO INTACTO) ---
 model Word {
   id              String     @id @default(auto()) @map("_id") @db.ObjectId
   term            String
@@ -80,7 +79,7 @@ model Example {
   word        Word    @relation(fields: [wordId], references: [id], onDelete: Cascade)
 }
 
-// --- ESTRUTURA DE GAMIFICAÇÃO REESTRUTURADA ---
+// --- ESTRUTURA DE GAMIFICAÇÃO (MODULO CORRIGIDO) ---
 
 model Level {
   id          String  @id @default(auto()) @map("_id") @db.ObjectId
@@ -117,39 +116,32 @@ model Lesson {
   unitId String @db.ObjectId
   unit   Unit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
-  // Mudança: De 'challenges' para 'activities' para incluir Teoria
   activities  Activity[]
   userHistory UserLesson[]
   createdAt   DateTime     @default(now())
 }
 
 model Activity {
-  id    String       @id @default(auto()) @map("_id") @db.ObjectId
-  order Int // Define a sequência: Teoria (1), Teoria (2), Desafio (3)...
-  type  ActivityType
-
-  // O campo question pode ser usado como título da Teoria ou pergunta do Desafio
+  id       String       @id @default(auto()) @map("_id") @db.ObjectId
+  order    Int
+  type     ActivityType
   question String
+  content  Json
 
-  // JSON flexível para suportar:
-  // Teoria: { "body": "Explicação aqui", "image": "url" }
-  // Desafio Imagem: { "imageCorrect": "url", "imageWrong": "url", "correctAnswer": "..." }
-  // Outros: { "options": [], "correct": "", "audioUrl": "" }
-  content Json
+  lessonId String @db.ObjectId
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 
-  lessonId  String   @db.ObjectId
-  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 }
 
 enum ActivityType {
-  THEORY // Apenas conteúdo, não tira corações
-  SELECT // Múltipla escolha
-  TRANSLATE // Tradução
-  ORDER // Ordenar palavras
-  PAIRS // Combinar pares
-  VOICE // Reconhecimento de fala (Whisper)
-  IMAGE_CHECK // O novo tipo: Duas imagens (Certa vs Errada)
+  THEORY
+  SELECT
+  TRANSLATE
+  ORDER
+  PAIRS
+  VOICE
+  IMAGE_CHECK
 }
 
 enum AccessType {
@@ -158,16 +150,27 @@ enum AccessType {
   ENTERPRISE
 }
 
-// --- REGISTOS E COMUNICAÇÃO (MANTIDOS) ---
+// --- REGISTOS DE PROGRESSO (AQUI ESTÁ A MUDANÇA) ---
 
 model UserLesson {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId      String   @db.ObjectId
-  lessonId    String   @db.ObjectId
-  completedAt DateTime @default(now())
-  score       Int
-  user        User     @relation(fields: [userId], references: [id])
-  lesson      Lesson   @relation(fields: [lessonId], references: [id])
+  id       String @id @default(auto()) @map("_id") @db.ObjectId
+  userId   String @db.ObjectId
+  lessonId String @db.ObjectId
+
+  // NOVO: Controla se a lição foi terminada para desbloquear a próxima
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+
+  // NOVO: Guarda em qual atividade (pelo 'order') o aluno parou
+  // Isso permite o "avançar e recuar" e salvar o estado ao sair
+  lastActivityOrder Int @default(1)
+
+  score  Int    @default(0)
+  user   User   @relation(fields: [userId], references: [id])
+  lesson Lesson @relation(fields: [lessonId], references: [id])
+
+  // Garante que o user tenha apenas um registro de progresso por lição
+  @@unique([userId, lessonId])
 }
 
 model Progress {

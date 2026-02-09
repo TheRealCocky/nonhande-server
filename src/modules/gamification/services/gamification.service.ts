@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 import { ActivityType } from '@prisma/client';
 import { UpdateLessonDto } from '../dto/update-lesson.dto';
 import { UpdateLevelDto } from '../dto/update-level.dto';
+
 @Injectable()
 export class GamificationService {
   private supabase = createClient(
@@ -15,41 +16,17 @@ export class GamificationService {
     process.env.SUPABASE_SECRET_KEY || '',
   );
   private readonly bucketName = process.env.SUPABASE_BUCKET as string;
-  private readonly REGEN_TIME = 24 * 60 * 1000; // 1 coração a cada 24 min
 
   constructor(private prisma: PrismaService) {}
 
-  // --- 1. GESTÃO DE STATUS E VIDAS (Sincronização Profissional) ---
-  async getUserStatus(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('Usuário não encontrado');
+  // --- 1. NAVEGAÇÃO E TRILHA (Agora com cálculo de bloqueio) ---
 
-    if (user.hearts < user.maxHearts) {
-      const now = new Date();
-      const lastUpdate = user.lastHeartUpdate || now;
-      const elapsed = now.getTime() - lastUpdate.getTime();
-      const heartsToAdd = Math.floor(elapsed / this.REGEN_TIME);
-
-      if (heartsToAdd > 0) {
-        const newHearts = Math.min(user.maxHearts, user.hearts + heartsToAdd);
-        // Calcula o próximo tick de regeneração baseado no tempo que sobrou
-        const nextUpdate = new Date(lastUpdate.getTime() + heartsToAdd * this.REGEN_TIME);
-
-        return await this.prisma.user.update({
-          where: { id: userId },
-          data: {
-            hearts: newHearts,
-            lastHeartUpdate: newHearts === user.maxHearts ? now : nextUpdate,
-          },
-        });
-      }
-    }
-    return user;
-  }
-
-  // --- 2. NAVEGAÇÃO E TRILHA (Com suporte a AccessType) ---
-  async getTrail(language: string) {
-    return this.prisma.level.findMany({
+  /**
+   * Retorna a trilha principal.
+   * Modificado para incluir o progresso do usuário e determinar o que está bloqueado.
+   */
+  async getTrail(language: string, userId?: string) {
+    const levels = await this.prisma.level.findMany({
       where: { language: language.toLowerCase() },
       orderBy: { order: 'asc' },
       include: {
@@ -63,75 +40,75 @@ export class GamificationService {
                 title: true,
                 order: true,
                 xpReward: true,
-                access: true, // Importante para o cadeado Premium
+                access: true,
+                // Trazemos o progresso para saber se a lição foi concluída
+                userHistory: userId ? { where: { userId } } : false,
               },
             },
           },
         },
       },
     });
+
+    if (!userId) return levels;
+
+    // Lógica de Bloqueio (O que você pediu: Nível 2 só abre se o 1 terminar)
+    let previousUnitCompleted = true;
+
+    return levels.map(level => ({
+      ...level,
+      units: level.units.map(unit => {
+        const isUnlocked = previousUnitCompleted;
+        // Uma unidade está completa se todas as suas lições estão marcadas como completed
+        const isCompleted = unit.lessons.length > 0 &&
+          unit.lessons.every(l => l.userHistory && l.userHistory[0]?.completed);
+
+        previousUnitCompleted = isCompleted;
+
+        return {
+          ...unit,
+          isUnlocked,
+          isCompleted,
+        };
+      })
+    }));
   }
 
-  async getLessonDetails(lessonId: string) {
+  /**
+   * Detalhes da lição com "Save State"
+   */
+  async getLessonDetails(lessonId: string, userId?: string) {
     const lesson = await this.prisma.lesson.findUnique({
       where: { id: lessonId },
       include: {
-        activities: { // Atualizado de challenges para activities
-          orderBy: { order: 'asc' }
-        }
+        activities: { orderBy: { order: 'asc' } },
+        // Se o userId for enviado, pegamos onde ele parou (lastActivityOrder)
+        userHistory: userId ? { where: { userId } } : false,
       },
     });
+
     if (!lesson) throw new NotFoundException('Lição não encontrada.');
     return lesson;
   }
 
-  // --- 3. CRIAÇÃO DE CONTEÚDO (Suporte a Teoria e 2 Imagens) ---
+  // --- 2. GESTÃO DE CONTEÚDO (MANTIDO E CORRIGIDO) ---
 
-  async createLevel(data: { title: string; order: number; language: string }) {
-    return this.prisma.level.create({ data });
-  }
-
-  async createUnit(data: { title: string; order: number; levelId: string }) {
-    return this.prisma.unit.create({ data });
-  }
-
-  async createLesson(data: {
-    title: string;
-    order: number;
-    unitId: string;
-    xpReward: number;
-  }) {
-    return this.prisma.lesson.create({ data });
-  }
-
-  /**
-   * Adiciona uma Atividade (Pode ser Teoria ou Desafio)
-   * Suporta upload de áudio e múltiplas imagens (para o modo IMAGE_CHECK)
-   */
   async addActivity(
     dto: any,
     files?: { audio?: Express.Multer.File[]; images?: Express.Multer.File[] },
   ) {
-    // 1. LOG DE SEGURANÇA: Verifica no teu terminal o que está a chegar no lessonId
-    console.log("DEBUG: Recebendo lessonId:", dto.lessonId);
-
-    // Validação crítica: Se o lessonId for a string "undefined" ou estiver vazio
     if (!dto.lessonId || dto.lessonId === 'undefined') {
-      throw new BadRequestException(
-        'O lessonId fornecido é inválido ou não foi enviado corretamente no FormData.'
-      );
+      throw new BadRequestException('O lessonId é inválido.');
     }
 
-    // Parse do conteúdo se vier como string (comum em FormData)
     const content = typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
 
-    // 1. Processamento de Áudio
-    if (files?.audio && files.audio[0]) {
+    // Processamento de arquivos para o Supabase
+    if (files?.audio?.[0]) {
       const audioPath = `gamification/audio/${Date.now()}_${files.audio[0].originalname}`;
       content.audioUrl = await this.uploadToSupabase(audioPath, files.audio[0]);
     }
 
-    // 2. Processamento de Imagens
     if (files?.images && files.images.length > 0) {
       const uploadedUrls = await Promise.all(
         files.images.map(async (img, idx) => {
@@ -148,42 +125,44 @@ export class GamificationService {
       }
     }
 
-    // 3. CRIAÇÃO COM TIPAGEM FORÇADA
     return this.prisma.activity.create({
       data: {
         type: dto.type,
         order: Number(dto.order),
         question: dto.question,
         content: content,
-        lessonId: dto.lessonId.trim(), // Limpa espaços em branco acidentais
+        lessonId: dto.lessonId.trim(),
       },
     });
   }
 
-  private async uploadToSupabase(
-    path: string,
-    file: Express.Multer.File,
-  ): Promise<string> {
-    const { error } = await this.supabase.storage
-      .from(this.bucketName)
-      .upload(path, file.buffer, { contentType: file.mimetype });
+  // --- 3. PROCESSAMENTO DE RESULTADOS (Sincronizado com o novo UserLesson) ---
 
-    if (error) throw new BadRequestException(`Erro Supabase: ${error.message}`);
-
-    return this.supabase.storage.from(this.bucketName).getPublicUrl(path).data.publicUrl;
-  }
-
-  // --- 4. PROCESSAMENTO DE RESULTADOS (Com Transação) ---
+  /**
+   * Finaliza a lição e desbloqueia o progresso
+   */
   async completeLesson(userId: string, lessonId: string, score: number) {
-    const lesson = await this.prisma.lesson.findUnique({
-      where: { id: lessonId },
-    });
+    const lesson = await this.prisma.lesson.findUnique({ where: { id: lessonId } });
     if (!lesson) throw new NotFoundException('Lição não encontrada.');
 
-    // Usamos Transação para garantir que XP e Histórico sejam salvos juntos
     return this.prisma.$transaction(async (tx) => {
-      await tx.userLesson.create({
-        data: { userId, lessonId, score },
+      // Usamos upsert para o caso de já termos um registro de "save state"
+      await tx.userLesson.upsert({
+        where: { userId_lessonId: { userId, lessonId } },
+        update: {
+          completed: true,
+          completedAt: new Date(),
+          score: score,
+          lastActivityOrder: 999 // Representa fim da lição
+        },
+        create: {
+          userId,
+          lessonId,
+          score,
+          completed: true,
+          completedAt: new Date(),
+          lastActivityOrder: 999
+        }
       });
 
       if (score >= 60) {
@@ -196,19 +175,26 @@ export class GamificationService {
         });
       }
 
-      return { message: 'Lição concluída, mas score baixo.' };
+      return { message: 'Lição concluída com score baixo.' };
     });
   }
-  async deleteLevel(id: string) {
-    return this.prisma.level.delete({ where: { id } });
+
+  // --- MÉTODOS AUXILIARES ---
+
+  private async uploadToSupabase(path: string, file: Express.Multer.File): Promise<string> {
+    const { error } = await this.supabase.storage
+      .from(this.bucketName)
+      .upload(path, file.buffer, { contentType: file.mimetype });
+
+    if (error) throw new BadRequestException(`Erro Supabase: ${error.message}`);
+    return this.supabase.storage.from(this.bucketName).getPublicUrl(path).data.publicUrl;
   }
-  async updateLevel(id: string, data: UpdateLevelDto){
-    return this.prisma.level.update({ where: { id }, data });
-  }
-  async deleteLesson(id: string) {
-    return this.prisma.lesson.delete({ where: { id } });
-  }
-  async updateLesson(id: string, data: UpdateLessonDto) {
-    return this.prisma.lesson.update({ where: { id }, data });
-  }
+
+  async createLevel(data: { title: string; order: number; language: string }) { return this.prisma.level.create({ data }); }
+  async createUnit(data: { title: string; order: number; levelId: string }) { return this.prisma.unit.create({ data }); }
+  async createLesson(data: { title: string; order: number; unitId: string; xpReward: number; }) { return this.prisma.lesson.create({ data }); }
+  async deleteLevel(id: string) { return this.prisma.level.delete({ where: { id } }); }
+  async updateLevel(id: string, data: UpdateLevelDto){ return this.prisma.level.update({ where: { id }, data }); }
+  async deleteLesson(id: string) { return this.prisma.lesson.delete({ where: { id } }); }
+  async updateLesson(id: string, data: UpdateLessonDto) { return this.prisma.lesson.update({ where: { id }, data }); }
 }

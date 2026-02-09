@@ -12,6 +12,7 @@ import {
   Query,
   ValidationPipe,
   UsePipes,
+  Req,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { GamificationService } from '../services/gamification.service';
@@ -19,7 +20,6 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 
-// Importação dos DTOs corrigida (assumindo que saímos de controllers/ para a raiz do módulo e entramos em dto/)
 import { UpdateLevelDto } from '../dto/update-level.dto';
 import { UpdateLessonDto } from '../dto/update-lesson.dto';
 
@@ -31,19 +31,41 @@ export class GamificationController {
 
   // --- 🧑‍🎓 ÁREA DO ESTUDANTE ---
 
+  /**
+   * ✅ OBTÉM A TRILHA PERSONALIZADA
+   * Agora recebe o userId do Request (JwtAuthGuard) para calcular o bloqueio das Units no Grid.
+   */
   @Get('trail')
-  async getTrail(@Query('lang') lang: string) {
-    return this.gamificationService.getTrail(lang || 'nhaneca');
+  async getTrail(@Query('lang') lang: string, @Req() req: any) {
+    const userId = req.user.id; // Extraído do Token JWT
+    return this.gamificationService.getTrail(lang || 'nhaneca', userId);
   }
 
+  /**
+   * ✅ OBTÉM DETALHES DA LIÇÃO
+   * Passamos o userId para o Frontend saber em qual Activity o aluno parou (Save State).
+   */
   @Get('lesson/:id')
-  async getLesson(@Param('id') id: string) {
-    return this.gamificationService.getLessonDetails(id);
+  async getLesson(@Param('id') id: string, @Req() req: any) {
+    const userId = req.user.id;
+    return this.gamificationService.getLessonDetails(id, userId);
   }
 
-  // --- 🛠️ ÁREA DO TEACHER/ADMIN ---
+  /**
+   * ✅ FINALIZA UMA LIÇÃO
+   * Endpoint essencial para disparar o XP e desbloquear o próximo item do Grid.
+   */
+  @Post('lesson/complete')
+  async completeLesson(
+    @Body() data: { lessonId: string; score: number },
+    @Req() req: any,
+  ) {
+    const userId = req.user.id;
+    return this.gamificationService.completeLesson(userId, data.lessonId, data.score);
+  }
 
-  // NÍVEIS
+  // --- 🛠️ ÁREA DO TEACHER/ADMIN (MANTIDA E PROTEGIDA) ---
+
   @Post('level')
   @Roles('ADMIN')
   @UseGuards(RolesGuard)
@@ -65,7 +87,6 @@ export class GamificationController {
     return this.gamificationService.deleteLevel(id);
   }
 
-  // UNIDADES
   @Post('unit')
   @Roles('ADMIN', 'TEACHER')
   @UseGuards(RolesGuard)
@@ -73,18 +94,11 @@ export class GamificationController {
     return this.gamificationService.createUnit(data);
   }
 
-  // LIÇÕES
   @Post('lesson')
   @Roles('ADMIN', 'TEACHER')
   @UseGuards(RolesGuard)
   async createLesson(
-    @Body()
-    data: {
-      title: string;
-      order: number;
-      unitId: string;
-      xpReward: number;
-    },
+    @Body() data: { title: string; order: number; unitId: string; xpReward: number; },
   ) {
     return this.gamificationService.createLesson(data);
   }
@@ -103,10 +117,6 @@ export class GamificationController {
     return this.gamificationService.deleteLesson(id);
   }
 
-  /**
-   * CRIAÇÃO DE ATIVIDADE (Teoria ou Desafio)
-   * Suporta 1 áudio e até 2 imagens (para o modo IMAGE_CHECK)
-   */
   @Post('activity')
   @Roles('ADMIN', 'TEACHER')
   @UseGuards(RolesGuard)

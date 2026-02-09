@@ -2,14 +2,13 @@ import {
   Controller,
   Get,
   Post,
-  Body,
   Param,
   UseGuards,
   ValidationPipe,
   UsePipes,
+  Req,
 } from '@nestjs/common';
 import { ProgressionService } from '../services/progression.service';
-import { CompleteLessonDto } from '../dto/complete-lesson.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 
 @Controller('progression')
@@ -18,8 +17,14 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 export class ProgressionController {
   constructor(private readonly progressionService: ProgressionService) {}
 
-  @Get('status/:userId')
-  async getStatus(@Param('userId') userId: string) {
+  /**
+   * ✅ OBTÉM O STATUS DE SOBREVIVÊNCIA
+   * Sincroniza corações e retorna XP/Streak.
+   * Removi o :userId da URL por segurança, pegamos direto do Token.
+   */
+  @Get('status')
+  async getStatus(@Req() req: any) {
+    const userId = req.user.id;
     const user = await this.progressionService.getOrSyncStatus(userId);
 
     const now = new Date();
@@ -37,21 +42,41 @@ export class ProgressionController {
       maxHearts: user.maxHearts,
       xp: user.xp,
       streak: user.streak,
-      nextHeartInSeconds
+      nextHeartInSeconds,
+      level: user.accessLevel // Para o frontend saber se mostra cadeados premium
     };
   }
 
-  @Post('complete')
-  async completeLesson(@Body() dto: CompleteLessonDto) {
-    return this.progressionService.processLessonCompletion(dto);
-  }
-
-  @Post('mistake/:userId')
-  async handleMistake(@Param('userId') userId: string) {
+  /**
+   * ✅ REGISTA UM ERRO (PERDA DE VIDA)
+   * Chamado quando o aluno erra uma questão que retira coração.
+   */
+  @Post('mistake')
+  async handleMistake(@Req() req: any) {
+    const userId = req.user.id;
     const updatedUser = await this.progressionService.handleLoss(userId);
     return {
-      message: 'Vida perdida!',
+      message: 'Vida perdida no reino!',
       heartsRemaining: updatedUser.hearts
     };
+  }
+
+  /**
+   * ✅ SALVA PROGRESSO PARCIAL (ATIVIDADE ATUAL)
+   * Novo: Para o aluno continuar onde parou se fechar o app.
+   */
+  @Post('save-point/:lessonId/:activityOrder')
+  async savePoint(
+    @Param('lessonId') lessonId: string,
+    @Param('activityOrder') activityOrder: string,
+    @Req() req: any
+  ) {
+    const userId = req.user.id;
+    await this.progressionService.saveActivityProgress(
+      userId,
+      lessonId,
+      parseInt(activityOrder)
+    );
+    return { success: true };
   }
 }
