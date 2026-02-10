@@ -6,7 +6,8 @@ import {
   UseGuards,
   ValidationPipe,
   UsePipes,
-  Req, Body,
+  Req,
+  Body,
 } from '@nestjs/common';
 import { ProgressionService } from '../services/progression.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';

@@ -128,23 +128,30 @@ export class ProgressionService {
   async processLessonCompletion(dto: CompleteLessonDto) {
     const { userId, lessonId, score } = dto;
 
-    // Sincroniza status antes da transação
+    // 1. Buscamos os dados necessários (fora da transação para performance)
     const user = await this.getOrSyncStatus(userId);
     const lesson = await this.prisma.lesson.findUnique({ where: { id: lessonId } });
 
     if (!lesson) throw new NotFoundException('Lição não encontrada');
 
-    // Score mínimo para ganhar recompensa (ex: 60%)
+    // 2. Trava de Score (Mínimo 60%)
     if (score < 60) {
-      return { success: false, message: 'Score insuficiente para XP.' };
+      return {
+        success: false,
+        message: 'Score insuficiente para XP.',
+        xpGained: 0,
+        newTotalXp: user.xp
+      };
     }
 
-    // Se o xpReward da lição for 0, usamos o score enviado pelo frontend como backup
-    const xpToGain = lesson.xpReward > 0 ? lesson.xpReward : score;
+    // ✅ GARANTIA: Arredondamos o XP para ser um Inteiro (essencial para o teu Schema)
+    const xpReward = lesson.xpReward > 0 ? lesson.xpReward : score;
+    const xpToGain = Math.floor(xpReward);
 
+    // 3. TRANSACTION: Blindagem para MongoDB
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
-      let newStreak = user.streak;
+      let newStreak = user.streak || 0;
 
       // Lógica de Streak (Ofensiva)
       if (!user.lastStreakUpdate) {
@@ -158,7 +165,7 @@ export class ProgressionService {
         }
       }
 
-      // 1. Marca a lição como concluída
+      // A) Marca a lição como concluída
       await tx.userLesson.upsert({
         where: { userId_lessonId: { userId, lessonId } },
         update: {
@@ -176,7 +183,7 @@ export class ProgressionService {
         },
       });
 
-      // 2. Atualiza o perfil do usuário (XP, Streak, Atividade)
+      // B) Atualiza o perfil e CAPTURA o retorno real do banco
       const updatedUser = await tx.user.update({
         where: { id: userId },
         data: {
@@ -186,6 +193,9 @@ export class ProgressionService {
           lastActive: now,
         },
       });
+
+      // ✅ LOG DE SEGURANÇA NO TERMINAL DO BACKEND
+      console.log(`[LEVEL-UP] Usuário ${userId}: +${xpToGain}XP | Total: ${updatedUser.xp}`);
 
       return {
         success: true,
