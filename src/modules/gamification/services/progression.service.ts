@@ -125,8 +125,11 @@ export class ProgressionService {
   /**
    * ✅ FINALIZAÇÃO DA LIÇÃO (SOMA DE XP E STREAK)
    */
-  async processLessonCompletion(dto: CompleteLessonDto) {
-    const { userId, lessonId, score } = dto;
+  /**
+   * ✅ FINALIZAÇÃO DA LIÇÃO (XP, STREAK E CORAÇÕES)
+   */
+  async processLessonCompletion(dto: CompleteLessonDto & { hearts?: number }) {
+    const { userId, lessonId, score, hearts } = dto;
 
     // 1. Buscamos o usuário e a lição (Frescos)
     const [user, lesson] = await Promise.all([
@@ -135,39 +138,54 @@ export class ProgressionService {
     ]);
 
     if (!user || !lesson) throw new NotFoundException('Dados não encontrados');
-    if (score < 60) return { success: false, xpGained: 0, newTotalXp: user.xp };
 
-    // 2. Cálculo manual do novo XP
+    // Se o score for baixo, retornamos o status atual sem prémio
+    if (score < 60) {
+      return { success: false, xpGained: 0, newTotalXp: user.xp, hearts: user.hearts };
+    }
+
+    // 2. Cálculos: XP e Streak
     const xpToGain = Math.floor(lesson.xpReward > 0 ? lesson.xpReward : score);
     const novoXpTotal = (user.xp || 0) + xpToGain;
+    const now = new Date();
 
     try {
-      // 3. UPDATE FORÇADO (Grava o valor final, não o incremento)
-      await this.prisma.user.update({
+      // 3. UPDATE FORÇADO
+      // Atualizamos XP, Streak e sincronizamos os corações finais da lição
+      const updatedUser = await this.prisma.user.update({
         where: { id: userId },
         data: {
-          xp: novoXpTotal, // Gravamos o número exato (ex: 150)
-          lastActive: new Date(),
-          streak: { increment: 1 }
+          xp: novoXpTotal,
+          // ✅ Sincroniza os corações: se o user perdeu vida na lição, salvamos aqui
+          // Usamos Math.min para garantir que ele não ganha corações extra por erro de lógica
+          hearts: hearts !== undefined ? Math.min(user.hearts, hearts) : user.hearts,
+          lastActive: now,
+          streak: { increment: 1 },
+          // Se ele terminou com menos corações que o máximo, garantimos que o timer de regen existe
+          lastHeartUpdate: (hearts !== undefined && hearts < user.maxHearts && !user.lastHeartUpdate)
+            ? now
+            : user.lastHeartUpdate
         },
       });
 
-      // 4. VERIFICAÇÃO FINAL (Leitura de confirmação)
-      const doubleCheck = await this.prisma.user.findUnique({
-        where: { id: userId },
-        select: { xp: true, streak: true }
+      // 4. MARCAR LIÇÃO COMO CONCLUÍDA (UserLesson)
+      await this.prisma.userLesson.upsert({
+        where: { userId_lessonId: { userId, lessonId } },
+        update: { completed: true, score, completedAt: now },
+        create: { userId, lessonId, completed: true, score, lastActivityOrder: 999 },
       });
 
-      console.log(`[XP_SISTEMA] User: ${userId} | Ganhou: ${xpToGain} | Confirmado no DB: ${doubleCheck?.xp}`);
+      console.log(`[GAME_SINK] User: ${userId} | XP: ${updatedUser.xp} | Hearts: ${updatedUser.hearts}`);
 
       return {
         success: true,
         xpGained: xpToGain,
-        newTotalXp: doubleCheck?.xp || 0,
-        streak: doubleCheck?.streak || 1,
+        newTotalXp: updatedUser.xp,
+        streak: updatedUser.streak,
+        hearts: updatedUser.hearts
       };
     } catch (error) {
-      console.error("❌ Erro ao gravar no MongoDB:", error);
+      console.error("❌ Erro ao finalizar lição no MongoDB:", error);
       throw error;
     }
   }
