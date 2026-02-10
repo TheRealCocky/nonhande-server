@@ -128,50 +128,46 @@ export class ProgressionService {
   async processLessonCompletion(dto: CompleteLessonDto) {
     const { userId, lessonId, score } = dto;
 
-    // 1. Busca dados básicos
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    // 1. Busca os dados da lição (User buscamos depois para garantir frescura)
     const lesson = await this.prisma.lesson.findUnique({ where: { id: lessonId } });
-
-    if (!user || !lesson) throw new NotFoundException('Usuário ou Lição não encontrados');
+    if (!lesson) throw new NotFoundException('Lição não encontrada');
 
     // 2. Trava de Score
     if (score < 60) {
-      return { success: false, message: 'Score insuficiente para XP.', xpGained: 0, newTotalXp: user.xp };
+      return { success: false, message: 'Score insuficiente', xpGained: 0 };
     }
 
-    // 3. Cálculo de XP (Garante que é Inteiro)
-    const xpReward = lesson.xpReward > 0 ? lesson.xpReward : score;
-    const xpToGain = Math.floor(xpReward);
+    const xpToGain = Math.floor(lesson.xpReward > 0 ? lesson.xpReward : score);
 
     try {
-      // 4. ATUALIZAÇÃO DIRETA (Sem transação para evitar bloqueios do MongoDB)
+      // 3. ATUALIZAÇÃO DO UTILIZADOR PRIMEIRO
+      // Usamos o retorno direto do update que é o mais confiável no Prisma/Mongo
       const updatedUser = await this.prisma.user.update({
         where: { id: userId },
         data: {
           xp: { increment: xpToGain },
           lastActive: new Date(),
-          // Lógica simples de streak para garantir que algo muda
-          streak: user.streak === 0 ? 1 : user.streak
         },
       });
 
-      // 5. REGISTA A LIÇÃO
+      // 4. REGISTO DA LIÇÃO (Upsert)
       await this.prisma.userLesson.upsert({
         where: { userId_lessonId: { userId, lessonId } },
-        update: { completed: true, score: score, completedAt: new Date() },
-        create: { userId, lessonId, completed: true, score: score, lastActivityOrder: 999 },
+        update: { completed: true, score, completedAt: new Date() },
+        create: { userId, lessonId, completed: true, score, lastActivityOrder: 999 },
       });
 
-      console.log(`[DATABASE-SUCCESS] XP antigo: ${user.xp} | XP Novo: ${updatedUser.xp}`);
+      // LOG NO TERMINAL DO BACKEND PARA PROVA REAL
+      console.log(`[XP_SISTEMA] User: ${userId} | Ganhou: ${xpToGain} | Total no DB: ${updatedUser.xp}`);
 
       return {
         success: true,
         xpGained: xpToGain,
-        newTotalXp: updatedUser.xp,
+        newTotalXp: updatedUser.xp, // Este valor TEM de ser > 0 agora
         streak: updatedUser.streak,
       };
     } catch (error) {
-      console.error("Erro fatal ao salvar XP:", error);
+      console.error("Erro ao processar conclusão:", error);
       throw error;
     }
   }
