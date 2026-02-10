@@ -128,46 +128,46 @@ export class ProgressionService {
   async processLessonCompletion(dto: CompleteLessonDto) {
     const { userId, lessonId, score } = dto;
 
-    // 1. Busca os dados da lição (User buscamos depois para garantir frescura)
-    const lesson = await this.prisma.lesson.findUnique({ where: { id: lessonId } });
-    if (!lesson) throw new NotFoundException('Lição não encontrada');
+    // 1. Buscamos o usuário e a lição (Frescos)
+    const [user, lesson] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: userId } }),
+      this.prisma.lesson.findUnique({ where: { id: lessonId } })
+    ]);
 
-    // 2. Trava de Score
-    if (score < 60) {
-      return { success: false, message: 'Score insuficiente', xpGained: 0 };
-    }
+    if (!user || !lesson) throw new NotFoundException('Dados não encontrados');
+    if (score < 60) return { success: false, xpGained: 0, newTotalXp: user.xp };
 
+    // 2. Cálculo manual do novo XP
     const xpToGain = Math.floor(lesson.xpReward > 0 ? lesson.xpReward : score);
+    const novoXpTotal = (user.xp || 0) + xpToGain;
 
     try {
-      // 3. ATUALIZAÇÃO DO UTILIZADOR PRIMEIRO
-      // Usamos o retorno direto do update que é o mais confiável no Prisma/Mongo
-      const updatedUser = await this.prisma.user.update({
+      // 3. UPDATE FORÇADO (Grava o valor final, não o incremento)
+      await this.prisma.user.update({
         where: { id: userId },
         data: {
-          xp: { increment: xpToGain },
+          xp: novoXpTotal, // Gravamos o número exato (ex: 150)
           lastActive: new Date(),
+          streak: { increment: 1 }
         },
       });
 
-      // 4. REGISTO DA LIÇÃO (Upsert)
-      await this.prisma.userLesson.upsert({
-        where: { userId_lessonId: { userId, lessonId } },
-        update: { completed: true, score, completedAt: new Date() },
-        create: { userId, lessonId, completed: true, score, lastActivityOrder: 999 },
+      // 4. VERIFICAÇÃO FINAL (Leitura de confirmação)
+      const doubleCheck = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { xp: true, streak: true }
       });
 
-      // LOG NO TERMINAL DO BACKEND PARA PROVA REAL
-      console.log(`[XP_SISTEMA] User: ${userId} | Ganhou: ${xpToGain} | Total no DB: ${updatedUser.xp}`);
+      console.log(`[XP_SISTEMA] User: ${userId} | Ganhou: ${xpToGain} | Confirmado no DB: ${doubleCheck?.xp}`);
 
       return {
         success: true,
         xpGained: xpToGain,
-        newTotalXp: updatedUser.xp, // Este valor TEM de ser > 0 agora
-        streak: updatedUser.streak,
+        newTotalXp: doubleCheck?.xp || 0,
+        streak: doubleCheck?.streak || 1,
       };
     } catch (error) {
-      console.error("Erro ao processar conclusão:", error);
+      console.error("❌ Erro ao gravar no MongoDB:", error);
       throw error;
     }
   }
