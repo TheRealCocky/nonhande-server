@@ -10,37 +10,44 @@ import { CompleteLessonDto } from '../dto/complete-lesson.dto';
 export class ProgressionService {
   constructor(private prisma: PrismaService) {}
 
-  private readonly REGEN_TIME = 24 * 60 * 1000; // 24 minutos
+  // 24 minutos para regenerar 1 coração
+  private readonly REGEN_TIME = 24 * 60 * 1000;
 
+  /**
+   * ✅ SINCRONIZA CORAÇÕES E STATUS
+   * Garante que o usuário receba corações por tempo decorrido e retorna o estado real do DB.
+   */
   async getOrSyncStatus(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
-    if (user.hearts < user.maxHearts) {
-      const now = new Date();
-      const lastUpdate = user.lastHeartUpdate || now;
-      const elapsed = now.getTime() - lastUpdate.getTime();
-      const heartsToAdd = Math.floor(elapsed / this.REGEN_TIME);
+    // Se já está no máximo, apenas retorna o usuário atual
+    if (user.hearts >= user.maxHearts) return user;
 
-      if (heartsToAdd > 0) {
-        const newHearts = Math.min(user.maxHearts, user.hearts + heartsToAdd);
-        const nextUpdate = new Date(lastUpdate.getTime() + heartsToAdd * this.REGEN_TIME);
+    const now = new Date();
+    const lastUpdate = user.lastHeartUpdate || now;
+    const elapsed = now.getTime() - lastUpdate.getTime();
+    const heartsToAdd = Math.floor(elapsed / this.REGEN_TIME);
 
-        return await this.prisma.user.update({
-          where: { id: userId },
-          data: {
-            hearts: newHearts,
-            lastHeartUpdate: newHearts === user.maxHearts ? now : nextUpdate,
-          },
-        });
-      }
+    if (heartsToAdd > 0) {
+      const newHearts = Math.min(user.maxHearts, user.hearts + heartsToAdd);
+
+      // IMPORTANTE: Atualiza e retorna o registro novo do banco
+      return await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          hearts: newHearts,
+          lastHeartUpdate: newHearts === user.maxHearts ? now : new Date(lastUpdate.getTime() + (heartsToAdd * this.REGEN_TIME)),
+        },
+      });
     }
+
     return user;
   }
 
   /**
-   * ✅ SALVA O ESTADO ATUAL (AVANÇAR/RECUAR)
-   * Chamado a cada atividade concluída para garantir que o aluno não perca o progresso se sair.
+   * ✅ SALVA O PONTO DE CONTROLO
+   * Chamado para persistir em qual atividade o aluno parou.
    */
   async saveActivityProgress(userId: string, lessonId: string, activityOrder: number) {
     return this.prisma.userLesson.upsert({
@@ -59,8 +66,8 @@ export class ProgressionService {
   }
 
   /**
-   * ✅ OBTÉM O ESTADO DO GRID PARA UM NÍVEL (LEVEL)
-   * Calcula quais Unidades estão bloqueadas ou completas.
+   * ✅ STATUS DO GRID (UNIDADES)
+   * Lógica para desbloqueio de unidades no mapa.
    */
   async getUnitGridStatus(userId: string, levelId: string) {
     const units = await this.prisma.unit.findMany({
@@ -75,7 +82,7 @@ export class ProgressionService {
     });
 
     const completedLessonIds = new Set(userLessons.map((l) => l.lessonId));
-    let previousUnitCompleted = true; // Primeira unidade está sempre aberta
+    let previousUnitCompleted = true;
 
     return units.map((unit) => {
       const isUnlocked = previousUnitCompleted;
@@ -95,6 +102,9 @@ export class ProgressionService {
     });
   }
 
+  /**
+   * ✅ GESTÃO DE ERROS (PERDA DE VIDA)
+   */
   async handleLoss(userId: string) {
     const user = await this.getOrSyncStatus(userId);
     if (user.hearts <= 0) throw new BadRequestException('Sem corações!');
@@ -103,39 +113,51 @@ export class ProgressionService {
       where: { id: userId },
       data: {
         hearts: { decrement: 1 },
+        // Se estava cheio, começa a contar o tempo de regeneração agora
         lastHeartUpdate: user.hearts === user.maxHearts ? new Date() : undefined,
       },
     });
   }
 
+  /**
+   * ✅ FINALIZAÇÃO DA LIÇÃO (SOMA DE XP E STREAK)
+   */
   async processLessonCompletion(dto: CompleteLessonDto) {
     const { userId, lessonId, score } = dto;
+
+    // Sincroniza status antes da transação
     const user = await this.getOrSyncStatus(userId);
     const lesson = await this.prisma.lesson.findUnique({ where: { id: lessonId } });
 
     if (!lesson) throw new NotFoundException('Lição não encontrada');
 
+    // Score mínimo para ganhar recompensa (ex: 60%)
     if (score < 60) {
       return { success: false, message: 'Score insuficiente para XP.' };
     }
+
+    // Se o xpReward da lição for 0, usamos o score enviado pelo frontend como backup
+    const xpToGain = lesson.xpReward > 0 ? lesson.xpReward : score;
 
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
       let newStreak = user.streak;
 
+      // Lógica de Streak (Ofensiva)
       if (!user.lastStreakUpdate) {
         newStreak = 1;
       } else {
         const diffHours = (now.getTime() - user.lastStreakUpdate.getTime()) / (1000 * 3600);
-        if (diffHours >= 24 && diffHours <= 48) newStreak += 1;
-        else if (diffHours > 48) newStreak = 1;
+        if (diffHours >= 24 && diffHours <= 48) {
+          newStreak += 1;
+        } else if (diffHours > 48) {
+          newStreak = 1;
+        }
       }
 
-      // ✅ UPSERT: Se o registro de progresso (save state) já existia, atualiza para completo.
+      // 1. Marca a lição como concluída
       await tx.userLesson.upsert({
-        where: {
-          userId_lessonId: { userId, lessonId },
-        },
+        where: { userId_lessonId: { userId, lessonId } },
         update: {
           completed: true,
           completedAt: now,
@@ -147,14 +169,15 @@ export class ProgressionService {
           completed: true,
           completedAt: now,
           score: score,
-          lastActivityOrder: 999, // Indica que passou por todas
+          lastActivityOrder: 999,
         },
       });
 
+      // 2. Atualiza o perfil do usuário (XP, Streak, Atividade)
       const updatedUser = await tx.user.update({
         where: { id: userId },
         data: {
-          xp: { increment: lesson.xpReward },
+          xp: { increment: xpToGain },
           streak: newStreak,
           lastStreakUpdate: now,
           lastActive: now,
@@ -163,7 +186,7 @@ export class ProgressionService {
 
       return {
         success: true,
-        xpGained: lesson.xpReward,
+        xpGained: xpToGain,
         newTotalXp: updatedUser.xp,
         streak: updatedUser.streak,
       };

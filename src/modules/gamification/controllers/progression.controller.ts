@@ -20,20 +20,25 @@ export class ProgressionController {
   /**
    * ✅ OBTÉM O STATUS DE SOBREVIVÊNCIA
    * Sincroniza corações e retorna XP/Streak.
-   * Removi o :userId da URL por segurança, pegamos direto do Token.
+   * Pega o userId do Token JWT para total segurança.
    */
   @Get('status')
   async getStatus(@Req() req: any) {
     const userId = req.user.id;
+
+    // Chama o service que já corrigimos para retornar dados frescos do DB
     const user = await this.progressionService.getOrSyncStatus(userId);
 
     const now = new Date();
     const lastUpdate = user.lastHeartUpdate || now;
     const elapsed = now.getTime() - lastUpdate.getTime();
+
+    // Usamos a mesma constante do Service (24 minutos)
     const REGEN_TIME = 24 * 60 * 1000;
 
     let nextHeartInSeconds = 0;
     if (user.hearts < user.maxHearts) {
+      // Cálculo do tempo restante para o próximo coração
       nextHeartInSeconds = Math.max(0, Math.floor((REGEN_TIME - (elapsed % REGEN_TIME)) / 1000));
     }
 
@@ -43,18 +48,19 @@ export class ProgressionController {
       xp: user.xp,
       streak: user.streak,
       nextHeartInSeconds,
-      level: user.accessLevel // Para o frontend saber se mostra cadeados premium
+      level: user.accessLevel // Útil para o frontend gerir permissões
     };
   }
 
   /**
    * ✅ REGISTA UM ERRO (PERDA DE VIDA)
-   * Chamado quando o aluno erra uma questão que retira coração.
+   * Agora retorna o status atualizado para o Frontend sincronizar na hora.
    */
   @Post('mistake')
   async handleMistake(@Req() req: any) {
     const userId = req.user.id;
     const updatedUser = await this.progressionService.handleLoss(userId);
+
     return {
       message: 'Vida perdida no reino!',
       heartsRemaining: updatedUser.hearts
@@ -63,7 +69,7 @@ export class ProgressionController {
 
   /**
    * ✅ SALVA PROGRESSO PARCIAL (ATIVIDADE ATUAL)
-   * Novo: Para o aluno continuar onde parou se fechar o app.
+   * Permite que o aluno continue exatamente de onde parou.
    */
   @Post('save-point/:lessonId/:activityOrder')
   async savePoint(
@@ -72,11 +78,13 @@ export class ProgressionController {
     @Req() req: any
   ) {
     const userId = req.user.id;
+
     await this.progressionService.saveActivityProgress(
       userId,
       lessonId,
       parseInt(activityOrder)
     );
+
     return { success: true };
   }
 }
