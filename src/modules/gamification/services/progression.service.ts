@@ -21,8 +21,10 @@ export class ProgressionService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
-    // Se já está no máximo, apenas retorna o usuário atual
-    if (user.hearts >= user.maxHearts) return user;
+    if (user.hearts >= user.maxHearts) {
+      // Se os corações estão cheios, garantimos que o timer está resetado para o futuro
+      return user;
+    }
 
     const now = new Date();
     const lastUpdate = user.lastHeartUpdate || now;
@@ -31,17 +33,15 @@ export class ProgressionService {
 
     if (heartsToAdd > 0) {
       const newHearts = Math.min(user.maxHearts, user.hearts + heartsToAdd);
-
-      // IMPORTANTE: Atualiza e retorna o registro novo do banco
       return await this.prisma.user.update({
         where: { id: userId },
         data: {
           hearts: newHearts,
-          lastHeartUpdate: newHearts === user.maxHearts ? now : new Date(lastUpdate.getTime() + (heartsToAdd * this.REGEN_TIME)),
+          // Se encheu, para o timer. Se não, ajusta para o tempo que sobrou do resto da divisão
+          lastHeartUpdate: newHearts === user.maxHearts ? null : new Date(lastUpdate.getTime() + (heartsToAdd * this.REGEN_TIME)),
         },
       });
     }
-
     return user;
   }
 
@@ -106,15 +106,18 @@ export class ProgressionService {
    * ✅ GESTÃO DE ERROS (PERDA DE VIDA)
    */
   async handleLoss(userId: string) {
-    const user = await this.getOrSyncStatus(userId);
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuário não encontrado');
     if (user.hearts <= 0) throw new BadRequestException('Sem corações!');
 
-    return this.prisma.user.update({
+    const now = new Date();
+
+    return await this.prisma.user.update({
       where: { id: userId },
       data: {
         hearts: { decrement: 1 },
-        // Se estava cheio, começa a contar o tempo de regeneração agora
-        lastHeartUpdate: user.hearts === user.maxHearts ? new Date() : undefined,
+        // Se ele tinha 5 e agora tem 4, o cronómetro de regeneração TEM de começar AGORA
+        lastHeartUpdate: user.hearts === user.maxHearts ? now : user.lastHeartUpdate,
       },
     });
   }

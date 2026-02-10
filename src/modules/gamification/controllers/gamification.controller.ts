@@ -51,18 +51,7 @@ export class GamificationController {
     return this.gamificationService.getLessonDetails(id, userId);
   }
 
-  /**
-   * ✅ FINALIZA UMA LIÇÃO
-   * Endpoint essencial para disparar o XP e desbloquear o próximo item do Grid.
-   */
-  @Post('lesson/complete')
-  async completeLesson(
-    @Body() data: { lessonId: string; score: number },
-    @Req() req: any,
-  ) {
-    const userId = req.user.id;
-    return this.gamificationService.completeLesson(userId, data.lessonId, data.score);
-  }
+
 
   // --- 🛠️ ÁREA DO TEACHER/ADMIN (MANTIDA E PROTEGIDA) ---
 

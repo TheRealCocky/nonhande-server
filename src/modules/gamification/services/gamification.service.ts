@@ -138,46 +138,7 @@ export class GamificationService {
 
   // --- 3. PROCESSAMENTO DE RESULTADOS (Sincronizado com o novo UserLesson) ---
 
-  /**
-   * Finaliza a lição e desbloqueia o progresso
-   */
-  async completeLesson(userId: string, lessonId: string, score: number) {
-    const lesson = await this.prisma.lesson.findUnique({ where: { id: lessonId } });
-    if (!lesson) throw new NotFoundException('Lição não encontrada.');
 
-    return this.prisma.$transaction(async (tx) => {
-      // Usamos upsert para o caso de já termos um registro de "save state"
-      await tx.userLesson.upsert({
-        where: { userId_lessonId: { userId, lessonId } },
-        update: {
-          completed: true,
-          completedAt: new Date(),
-          score: score,
-          lastActivityOrder: 999 // Representa fim da lição
-        },
-        create: {
-          userId,
-          lessonId,
-          score,
-          completed: true,
-          completedAt: new Date(),
-          lastActivityOrder: 999
-        }
-      });
-
-      if (score >= 60) {
-        return tx.user.update({
-          where: { id: userId },
-          data: {
-            xp: { increment: lesson.xpReward },
-            lastActive: new Date(),
-          },
-        });
-      }
-
-      return { message: 'Lição concluída com score baixo.' };
-    });
-  }
 
   // --- MÉTODOS AUXILIARES ---
 

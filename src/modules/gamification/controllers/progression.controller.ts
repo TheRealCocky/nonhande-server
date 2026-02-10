@@ -6,7 +6,7 @@ import {
   UseGuards,
   ValidationPipe,
   UsePipes,
-  Req,
+  Req, Body,
 } from '@nestjs/common';
 import { ProgressionService } from '../services/progression.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -87,4 +87,23 @@ export class ProgressionController {
 
     return { success: true };
   }
+  /**
+   * ✅ FINALIZA UMA LIÇÃO
+   * Recebe o score e lessonId, calcula XP e Streak.
+   */
+  @Post('complete')
+  async completeLesson(
+    @Body() dto: { lessonId: string; score: number },
+    @Req() req: any
+  ) {
+    const userId = req.user.id;
+
+    // Chamamos o serviço que já tem a transação blindada
+    return await this.progressionService.processLessonCompletion({
+      userId,
+      lessonId: dto.lessonId,
+      score: dto.score,
+    });
+  }
+
 }
