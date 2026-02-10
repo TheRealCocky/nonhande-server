@@ -131,7 +131,6 @@ export class ProgressionService {
   async processLessonCompletion(dto: CompleteLessonDto & { hearts?: number }) {
     const { userId, lessonId, score, hearts } = dto;
 
-    // 1. Buscamos o usuário e a lição (Frescos)
     const [user, lesson] = await Promise.all([
       this.prisma.user.findUnique({ where: { id: userId } }),
       this.prisma.lesson.findUnique({ where: { id: lessonId } })
@@ -139,53 +138,66 @@ export class ProgressionService {
 
     if (!user || !lesson) throw new NotFoundException('Dados não encontrados');
 
-    // Se o score for baixo, retornamos o status atual sem prémio
-    if (score < 60) {
-      return { success: false, xpGained: 0, newTotalXp: user.xp, hearts: user.hearts };
-    }
-
-    // 2. Cálculos: XP e Streak
-    const xpToGain = Math.floor(lesson.xpReward > 0 ? lesson.xpReward : score);
-    const novoXpTotal = (user.xp || 0) + xpToGain;
     const now = new Date();
 
+    // --- PASSO 1: PERSISTIR CORAÇÕES (Sempre acontece, ganhe ou perca) ---
+    const currentHearts = hearts !== undefined ? Math.min(user.hearts, hearts) : user.hearts;
+
+    const updatedBaseData = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        hearts: currentHearts,
+        lastActive: now,
+        // Inicia o timer de regeneração se ele perdeu vida agora
+        lastHeartUpdate: (currentHearts < user.maxHearts && !user.lastHeartUpdate)
+          ? now
+          : user.lastHeartUpdate
+      }
+    });
+
+    // --- PASSO 2: VALIDAÇÃO DE SCORE PARA XP ---
+    if (score < 60) {
+      console.log(`[REPROVADO] User: ${userId} | Score: ${score}% | Vidas Salvas: ${currentHearts}`);
+      return {
+        success: false,
+        xpGained: 0,
+        newTotalXp: user.xp,
+        hearts: currentHearts,
+        message: "Score insuficiente para bónus de XP."
+      };
+    }
+
+    // --- PASSO 3: ATRIBUIR XP E STREAK (Só se passou) ---
+    const xpToGain = Math.floor(lesson.xpReward > 0 ? lesson.xpReward : score);
+    const novoXpTotal = (user.xp || 0) + xpToGain;
+
     try {
-      // 3. UPDATE FORÇADO
-      // Atualizamos XP, Streak e sincronizamos os corações finais da lição
-      const updatedUser = await this.prisma.user.update({
+      const finalUser = await this.prisma.user.update({
         where: { id: userId },
         data: {
           xp: novoXpTotal,
-          // ✅ Sincroniza os corações: se o user perdeu vida na lição, salvamos aqui
-          // Usamos Math.min para garantir que ele não ganha corações extra por erro de lógica
-          hearts: hearts !== undefined ? Math.min(user.hearts, hearts) : user.hearts,
-          lastActive: now,
-          streak: { increment: 1 },
-          // Se ele terminou com menos corações que o máximo, garantimos que o timer de regen existe
-          lastHeartUpdate: (hearts !== undefined && hearts < user.maxHearts && !user.lastHeartUpdate)
-            ? now
-            : user.lastHeartUpdate
+          streak: { increment: 1 }
         },
       });
 
-      // 4. MARCAR LIÇÃO COMO CONCLUÍDA (UserLesson)
+      // Registar conclusão da lição
       await this.prisma.userLesson.upsert({
         where: { userId_lessonId: { userId, lessonId } },
         update: { completed: true, score, completedAt: now },
         create: { userId, lessonId, completed: true, score, lastActivityOrder: 999 },
       });
 
-      console.log(`[GAME_SINK] User: ${userId} | XP: ${updatedUser.xp} | Hearts: ${updatedUser.hearts}`);
+      console.log(`[APROVADO] User: ${userId} | +${xpToGain}XP | Total: ${finalUser.xp}`);
 
       return {
         success: true,
         xpGained: xpToGain,
-        newTotalXp: updatedUser.xp,
-        streak: updatedUser.streak,
-        hearts: updatedUser.hearts
+        newTotalXp: finalUser.xp,
+        streak: finalUser.streak,
+        hearts: finalUser.hearts
       };
     } catch (error) {
-      console.error("❌ Erro ao finalizar lição no MongoDB:", error);
+      console.error("❌ Erro ao finalizar XP no MongoDB:", error);
       throw error;
     }
   }
