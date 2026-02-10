@@ -128,74 +128,41 @@ export class ProgressionService {
   async processLessonCompletion(dto: CompleteLessonDto) {
     const { userId, lessonId, score } = dto;
 
-    // 1. Buscamos os dados necessários (fora da transação para performance)
-    const user = await this.getOrSyncStatus(userId);
+    // 1. Busca dados básicos
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const lesson = await this.prisma.lesson.findUnique({ where: { id: lessonId } });
 
-    if (!lesson) throw new NotFoundException('Lição não encontrada');
+    if (!user || !lesson) throw new NotFoundException('Usuário ou Lição não encontrados');
 
-    // 2. Trava de Score (Mínimo 60%)
+    // 2. Trava de Score
     if (score < 60) {
-      return {
-        success: false,
-        message: 'Score insuficiente para XP.',
-        xpGained: 0,
-        newTotalXp: user.xp
-      };
+      return { success: false, message: 'Score insuficiente para XP.', xpGained: 0, newTotalXp: user.xp };
     }
 
-    // ✅ GARANTIA: Arredondamos o XP para ser um Inteiro (essencial para o teu Schema)
+    // 3. Cálculo de XP (Garante que é Inteiro)
     const xpReward = lesson.xpReward > 0 ? lesson.xpReward : score;
     const xpToGain = Math.floor(xpReward);
 
-    // 3. TRANSACTION: Blindagem para MongoDB
-    return this.prisma.$transaction(async (tx) => {
-      const now = new Date();
-      let newStreak = user.streak || 0;
-
-      // Lógica de Streak (Ofensiva)
-      if (!user.lastStreakUpdate) {
-        newStreak = 1;
-      } else {
-        const diffHours = (now.getTime() - user.lastStreakUpdate.getTime()) / (1000 * 3600);
-        if (diffHours >= 24 && diffHours <= 48) {
-          newStreak += 1;
-        } else if (diffHours > 48) {
-          newStreak = 1;
-        }
-      }
-
-      // A) Marca a lição como concluída
-      await tx.userLesson.upsert({
-        where: { userId_lessonId: { userId, lessonId } },
-        update: {
-          completed: true,
-          completedAt: now,
-          score: score,
-        },
-        create: {
-          userId,
-          lessonId,
-          completed: true,
-          completedAt: now,
-          score: score,
-          lastActivityOrder: 999,
-        },
-      });
-
-      // B) Atualiza o perfil e CAPTURA o retorno real do banco
-      const updatedUser = await tx.user.update({
+    try {
+      // 4. ATUALIZAÇÃO DIRETA (Sem transação para evitar bloqueios do MongoDB)
+      const updatedUser = await this.prisma.user.update({
         where: { id: userId },
         data: {
           xp: { increment: xpToGain },
-          streak: newStreak,
-          lastStreakUpdate: now,
-          lastActive: now,
+          lastActive: new Date(),
+          // Lógica simples de streak para garantir que algo muda
+          streak: user.streak === 0 ? 1 : user.streak
         },
       });
 
-      // ✅ LOG DE SEGURANÇA NO TERMINAL DO BACKEND
-      console.log(`[LEVEL-UP] Usuário ${userId}: +${xpToGain}XP | Total: ${updatedUser.xp}`);
+      // 5. REGISTA A LIÇÃO
+      await this.prisma.userLesson.upsert({
+        where: { userId_lessonId: { userId, lessonId } },
+        update: { completed: true, score: score, completedAt: new Date() },
+        create: { userId, lessonId, completed: true, score: score, lastActivityOrder: 999 },
+      });
+
+      console.log(`[DATABASE-SUCCESS] XP antigo: ${user.xp} | XP Novo: ${updatedUser.xp}`);
 
       return {
         success: true,
@@ -203,6 +170,9 @@ export class ProgressionService {
         newTotalXp: updatedUser.xp,
         streak: updatedUser.streak,
       };
-    });
+    } catch (error) {
+      console.error("Erro fatal ao salvar XP:", error);
+      throw error;
+    }
   }
 }
