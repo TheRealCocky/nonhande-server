@@ -36,7 +36,12 @@ export class GamificationController {
    */
   @Get('trail')
   async getTrail(@Query('lang') lang: string, @Req() req: any) {
-    const userId = req.user.id;
+    // Usamos o operador ?. para não quebrar se o user não estiver no request
+    const userId = req.user?.id;
+
+    // Log para debug no terminal do VS Code
+    console.log(`📡 Buscando trilha: Lang=${lang || 'nhaneca'} | User=${userId || 'GUEST/ADMIN'}`);
+
     return this.gamificationService.getTrail(lang || 'nhaneca', userId);
   }
 

@@ -20,9 +20,36 @@ export class GamificationService {
   constructor(private prisma: PrismaService) {}
 
   // --- MÉTODOS DE NAVEGAÇÃO ---
+
   async getTrail(language: string, userId?: string) {
-    /* Coloque aqui sua lógica de Trail original */
-    return [];
+    const trail = await this.prisma.level.findMany({
+      where: {
+        // Filtro por linguagem (nhaneca)
+        language: { equals: language, mode: 'insensitive' }
+      },
+      include: {
+        units: {
+          orderBy: { order: 'asc' },
+          include: {
+            lessons: {
+              orderBy: { order: 'asc' },
+              include: {
+                activities: { select: { id: true } } // Pegamos apenas IDs para contar
+              }
+            }
+          }
+        }
+      },
+      orderBy: { order: 'asc' },
+    });
+
+    if (!trail || trail.length === 0) {
+      console.warn(`Nenhuma trail encontrada para a língua: ${language}`);
+    }
+
+    // Se o userId for passado, aqui você poderia injetar a lógica de progresso
+    // Por agora, retornamos a estrutura completa para o Admin funcionar
+    return trail;
   }
 
   async getLessonDetails(lessonId: string, userId?: string) {
