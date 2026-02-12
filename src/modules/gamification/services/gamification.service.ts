@@ -150,6 +150,73 @@ export class GamificationService {
     });
   }
 
+  // --- NOVOS MÉTODOS PARA GESTÃO DE ATIVIDADES ---
+
+  async updateActivity(
+    id: string,
+    dto: any,
+    files?: { audio?: Express.Multer.File[]; images?: Express.Multer.File[] },
+  ) {
+    // 1. Verificar se a atividade existe
+    const existingActivity = await this.prisma.activity.findUnique({ where: { id } });
+    if (!existingActivity) throw new NotFoundException('Atividade não encontrada.');
+
+    // 2. Parse do conteúdo vindo do Frontend
+    const newContent = typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
+
+    // 3. Manter URLs antigos se ficheiros novos não forem enviados
+    const oldContent = existingActivity.content as any;
+    newContent.audioUrl = oldContent?.audioUrl;
+    newContent.imageCorrect = oldContent?.imageCorrect;
+    newContent.imageWrong = oldContent?.imageWrong;
+    newContent.imageUrl = oldContent?.imageUrl;
+
+    // 4. Processar novos ficheiros (se existirem)
+    if (files?.audio?.[0]) {
+      const audioPath = `gamification/audio/${Date.now()}_${files.audio[0].originalname}`;
+      newContent.audioUrl = await this.uploadToSupabase(audioPath, files.audio[0]);
+    }
+
+    if (files?.images && files.images.length > 0) {
+      const uploadedUrls = await Promise.all(
+        files.images.map(async (img, idx) => {
+          const path = `gamification/visual/${Date.now()}_idx${idx}_${img.originalname}`;
+          return await this.uploadToSupabase(path, img);
+        })
+      );
+
+      if (dto.type === ActivityType.IMAGE_CHECK) {
+        newContent.imageCorrect = uploadedUrls[0] || oldContent?.imageCorrect;
+        newContent.imageWrong = uploadedUrls[1] || oldContent?.imageWrong;
+      } else {
+        newContent.imageUrl = uploadedUrls[0] || oldContent?.imageUrl;
+      }
+    }
+
+    // 5. Atualizar no Banco de Dados
+    return this.prisma.activity.update({
+      where: { id },
+      data: {
+        type: dto.type,
+        order: dto.order ? Number(dto.order) : undefined,
+        question: dto.question,
+        content: newContent,
+      },
+    });
+  }
+
+  async deleteActivity(id: string) {
+    // Verificar existência antes de apagar
+    const activity = await this.prisma.activity.findUnique({ where: { id } });
+    if (!activity) throw new NotFoundException('Atividade não encontrada.');
+
+    // Nota: Para ser perfeito, poderias apagar os ficheiros no Supabase aqui usando o URL
+    // mas o delete da linha na DB é o passo crítico.
+    return this.prisma.activity.delete({
+      where: { id },
+    });
+  }
+
   // --- 3. PROCESSAMENTO DE RESULTADOS (Sincronizado com o novo UserLesson) ---
 
 

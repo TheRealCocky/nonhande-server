@@ -121,4 +121,28 @@ export class GamificationController {
   ) {
     return this.gamificationService.addActivity(dto, files);
   }
+  @Patch('activity/:id')
+  @Roles('ADMIN', 'TEACHER')
+  @UseGuards(RolesGuard)
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'audio', maxCount: 1 },
+      { name: 'images', maxCount: 2 },
+    ]),
+  )
+  async updateActivity(
+    @Param('id') id: string,
+    @Body() dto: any,
+    @UploadedFiles() files: { audio?: Express.Multer.File[]; images?: Express.Multer.File[] },
+  ) {
+    // Chamamos o service para atualizar
+    return this.gamificationService.updateActivity(id, dto, files);
+  }
+
+  @Delete('activity/:id')
+  @Roles('ADMIN', 'TEACHER')
+  @UseGuards(RolesGuard)
+  async deleteActivity(@Param('id') id: string) {
+    return this.gamificationService.deleteActivity(id);
+  }
 }
