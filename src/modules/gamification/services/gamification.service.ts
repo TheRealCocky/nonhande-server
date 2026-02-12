@@ -41,7 +41,6 @@ export class GamificationService {
                 order: true,
                 xpReward: true,
                 access: true,
-                // Trazemos o progresso para saber se a lição foi concluída
                 userHistory: userId ? { where: { userId } } : false,
               },
             },
@@ -52,23 +51,38 @@ export class GamificationService {
 
     if (!userId) return levels;
 
-    // Lógica de Bloqueio (O que você pediu: Nível 2 só abre se o 1 terminar)
     let previousUnitCompleted = true;
 
     return levels.map(level => ({
       ...level,
       units: level.units.map(unit => {
-        const isUnlocked = previousUnitCompleted;
-        // Uma unidade está completa se todas as suas lições estão marcadas como completed
-        const isCompleted = unit.lessons.length > 0 &&
-          unit.lessons.every(l => l.userHistory && l.userHistory[0]?.completed);
+        const lessons = unit.lessons || [];
 
+        // 1. Calculamos os números reais para o Frontend
+        const totalLessons = lessons.length;
+        const completedLessons = lessons.filter(
+          l => l.userHistory && l.userHistory[0]?.completed
+        ).length;
+
+        // 2. Lógica de Bloqueio
+        const isUnlocked = previousUnitCompleted;
+
+        // Uma unidade só conta como completa se tiver lições e todas estiverem feitas
+        const isCompleted = totalLessons > 0 && completedLessons === totalLessons;
+
+        // Atualizamos para a próxima iteração
         previousUnitCompleted = isCompleted;
 
         return {
           ...unit,
           isUnlocked,
           isCompleted,
+          // 3. ENVIAMOS ESTES DADOS: Isso evita cálculos pesados no Frontend
+          stats: {
+            total: totalLessons,
+            completed: completedLessons,
+            percent: totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0
+          }
         };
       })
     }));
