@@ -33,17 +33,15 @@ export class GamificationController {
 
   /**
    * ✅ OBTÉM A TRILHA PERSONALIZADA
-   * Agora recebe o userId do Request (JwtAuthGuard) para calcular o bloqueio das Units no Grid.
    */
   @Get('trail')
   async getTrail(@Query('lang') lang: string, @Req() req: any) {
-    const userId = req.user.id; // Extraído do Token JWT
+    const userId = req.user.id;
     return this.gamificationService.getTrail(lang || 'nhaneca', userId);
   }
 
   /**
    * ✅ OBTÉM DETALHES DA LIÇÃO
-   * Passamos o userId para o Frontend saber em qual Activity o aluno parou (Save State).
    */
   @Get('lesson/:id')
   async getLesson(@Param('id') id: string, @Req() req: any) {
@@ -51,9 +49,7 @@ export class GamificationController {
     return this.gamificationService.getLessonDetails(id, userId);
   }
 
-
-
-  // --- 🛠️ ÁREA DO TEACHER/ADMIN (MANTIDA E PROTEGIDA) ---
+  // --- 🛠️ ÁREA DO TEACHER/ADMIN ---
 
   @Post('level')
   @Roles('ADMIN')
@@ -106,36 +102,52 @@ export class GamificationController {
     return this.gamificationService.deleteLesson(id);
   }
 
+  /**
+   * ✅ CRIAÇÃO DE ATIVIDADE (Ajustado para múltiplos arquivos)
+   */
   @Post('activity')
   @Roles('ADMIN', 'TEACHER')
   @UseGuards(RolesGuard)
   @UseInterceptors(
     FileFieldsInterceptor([
-      { name: 'audio', maxCount: 1 },
-      { name: 'images', maxCount: 2 },
+      { name: 'audio', maxCount: 1 },         // Áudio principal/correto
+      { name: 'distractors', maxCount: 4 },  // Áudios errados para o desafio de escuta
+      { name: 'images', maxCount: 4 },       // Até 4 imagens (para exercícios de múltipla escolha visual)
     ]),
   )
   async createActivity(
     @Body() dto: any,
-    @UploadedFiles() files: { audio?: Express.Multer.File[]; images?: Express.Multer.File[] },
+    @UploadedFiles() files: {
+      audio?: Express.Multer.File[];
+      distractors?: Express.Multer.File[];
+      images?: Express.Multer.File[]
+    },
   ) {
     return this.gamificationService.addActivity(dto, files);
   }
+
+  /**
+   * ✅ ATUALIZAÇÃO DE ATIVIDADE
+   */
   @Patch('activity/:id')
   @Roles('ADMIN', 'TEACHER')
   @UseGuards(RolesGuard)
   @UseInterceptors(
     FileFieldsInterceptor([
       { name: 'audio', maxCount: 1 },
-      { name: 'images', maxCount: 2 },
+      { name: 'distractors', maxCount: 4 },
+      { name: 'images', maxCount: 4 },
     ]),
   )
   async updateActivity(
     @Param('id') id: string,
     @Body() dto: any,
-    @UploadedFiles() files: { audio?: Express.Multer.File[]; images?: Express.Multer.File[] },
+    @UploadedFiles() files: {
+      audio?: Express.Multer.File[];
+      distractors?: Express.Multer.File[];
+      images?: Express.Multer.File[]
+    },
   ) {
-    // Chamamos o service para atualizar
     return this.gamificationService.updateActivity(id, dto, files);
   }
 
