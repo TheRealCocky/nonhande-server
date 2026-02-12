@@ -143,6 +143,8 @@ enum ActivityType {
   SPEAK
   IMAGE_CHECK
   THEORY
+  PAIRS
+  VOICE
 }
 
 enum AccessType {
