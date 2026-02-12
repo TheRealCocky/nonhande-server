@@ -106,6 +106,18 @@ export class GamificationService {
   }
 
   // --- 2. GESTÃO DE CONTEÚDO (MANTIDO E CORRIGIDO) ---
+  /**
+   * MÉTODO AUXILIAR PARA DESCOBRIR A LÍNGUA DA LIÇÃO
+   */
+  private async getLanguageByLesson(lessonId: string): Promise<string> {
+    const lesson = await this.prisma.lesson.findUnique({
+      where: { id: lessonId },
+      include: { unit: { include: { level: true } } }
+    });
+
+    // Retorna a língua (ex: nhaneca-humbe, umbundu) ou 'default'
+    return lesson?.unit?.level?.language?.toLowerCase() || 'general';
+  }
 
   async addActivity(
     dto: any,
@@ -115,18 +127,22 @@ export class GamificationService {
       throw new BadRequestException('O lessonId é inválido.');
     }
 
+    const lang = await this.getLanguageByLesson(dto.lessonId);
     const content = typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
 
-    // Processamento de arquivos para o Supabase
+    // 1. Processamento de Áudio
     if (files?.audio?.[0]) {
-      const audioPath = `gamification/audio/${Date.now()}_${files.audio[0].originalname}`;
+      // Estrutura: Nonhande_dataset/nhaneca-humbe/gamification/audio/...
+      const audioPath = `Nonhande_dataset/${lang}/gamification/audio/${Date.now()}_${files.audio[0].originalname}`;
       content.audioUrl = await this.uploadToSupabase(audioPath, files.audio[0]);
     }
 
+    // 2. Processamento de Imagens
     if (files?.images && files.images.length > 0) {
       const uploadedUrls = await Promise.all(
         files.images.map(async (img, idx) => {
-          const path = `gamification/visual/${Date.now()}_idx${idx}_${img.originalname}`;
+          // Estrutura: Nonhande_dataset/nhaneca-humbe/gamification/visual/...
+          const path = `Nonhande_dataset/${lang}/gamification/visual/${Date.now()}_idx${idx}_${img.originalname}`;
           return await this.uploadToSupabase(path, img);
         })
       );
@@ -157,30 +173,32 @@ export class GamificationService {
     dto: any,
     files?: { audio?: Express.Multer.File[]; images?: Express.Multer.File[] },
   ) {
-    // 1. Verificar se a atividade existe
-    const existingActivity = await this.prisma.activity.findUnique({ where: { id } });
+    const existingActivity = await this.prisma.activity.findUnique({
+      where: { id },
+      include: { lesson: true }
+    });
     if (!existingActivity) throw new NotFoundException('Atividade não encontrada.');
 
-    // 2. Parse do conteúdo vindo do Frontend
+    const lang = await this.getLanguageByLesson(existingActivity.lessonId);
     const newContent = typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
 
-    // 3. Manter URLs antigos se ficheiros novos não forem enviados
+    // Preservar URLs antigos
     const oldContent = existingActivity.content as any;
     newContent.audioUrl = oldContent?.audioUrl;
     newContent.imageCorrect = oldContent?.imageCorrect;
     newContent.imageWrong = oldContent?.imageWrong;
     newContent.imageUrl = oldContent?.imageUrl;
 
-    // 4. Processar novos ficheiros (se existirem)
+    // Upload de novos arquivos (se houver)
     if (files?.audio?.[0]) {
-      const audioPath = `gamification/audio/${Date.now()}_${files.audio[0].originalname}`;
+      const audioPath = `Nonhande_dataset/${lang}/gamification/audio/${Date.now()}_${files.audio[0].originalname}`;
       newContent.audioUrl = await this.uploadToSupabase(audioPath, files.audio[0]);
     }
 
     if (files?.images && files.images.length > 0) {
       const uploadedUrls = await Promise.all(
         files.images.map(async (img, idx) => {
-          const path = `gamification/visual/${Date.now()}_idx${idx}_${img.originalname}`;
+          const path = `Nonhande_dataset/${lang}/gamification/visual/${Date.now()}_idx${idx}_${img.originalname}`;
           return await this.uploadToSupabase(path, img);
         })
       );
@@ -193,7 +211,6 @@ export class GamificationService {
       }
     }
 
-    // 5. Atualizar no Banco de Dados
     return this.prisma.activity.update({
       where: { id },
       data: {

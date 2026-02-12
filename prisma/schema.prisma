@@ -135,13 +135,14 @@ model Activity {
 }
 
 enum ActivityType {
-  THEORY
   SELECT
+  LISTEN_SELECT
+  FILL_BLANK
   TRANSLATE
-  ORDER
-  PAIRS
-  VOICE
+  LISTEN_ORDER
+  SPEAK
   IMAGE_CHECK
+  THEORY
 }
 
 enum AccessType {
