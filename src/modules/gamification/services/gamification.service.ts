@@ -24,7 +24,7 @@ export class GamificationService {
   async getTrail(language: string, userId?: string) {
     const trail = await this.prisma.level.findMany({
       where: {
-        // Filtro por linguagem (nhaneca)
+        // Filtro por linguagem (ex: nhaneca)
         language: { equals: language, mode: 'insensitive' }
       },
       include: {
@@ -34,7 +34,16 @@ export class GamificationService {
             lessons: {
               orderBy: { order: 'asc' },
               include: {
-                activities: { select: { id: true } } // Pegamos apenas IDs para contar
+                activities: { select: { id: true } },
+                // ✨ A PEÇA QUE FALTAVA: Injetar o histórico do utilizador logado
+                userHistory: userId ? {
+                  where: { userId: userId },
+                  select: {
+                    completed: true,
+                    score: true,
+                    lastActivityOrder: true
+                  }
+                } : false,
               }
             }
           }
@@ -47,8 +56,8 @@ export class GamificationService {
       console.warn(`Nenhuma trail encontrada para a língua: ${language}`);
     }
 
-    // Se o userId for passado, aqui você poderia injetar a lógica de progresso
-    // Por agora, retornamos a estrutura completa para o Admin funcionar
+    // Agora o retorno já leva o progresso, permitindo que o StudentMap
+    // destranque as lições e unidades corretamente.
     return trail;
   }
 
