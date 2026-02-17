@@ -24,11 +24,11 @@ model User {
   verificationCode String?
 
   // Gamificação
-  xp              Int       @default(0)
-  hearts          Int       @default(5)
-  maxHearts       Int       @default(5)
-  lastHeartUpdate DateTime? @default(now())
-
+  xp               Int       @default(0)
+  hearts           Int       @default(5)
+  maxHearts        Int       @default(5)
+  lastHeartUpdate  DateTime? @default(now())
+  voiceSampleUrl   String? // NOVO: Para futura clonagem de voz do aluno
   streak           Int       @default(0)
   lastStreakUpdate DateTime?
   lastActive       DateTime? @default(now())
@@ -127,9 +127,9 @@ model Activity {
   type     ActivityType
   question String
   content  Json
-
-  lessonId String @db.ObjectId
-  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  metadata Json? // NOVO: Para infos extras (dialeto, nível de respeito, etc.)
+  lessonId String       @db.ObjectId
+  lesson   Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 }
