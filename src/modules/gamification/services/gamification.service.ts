@@ -222,7 +222,52 @@ export class GamificationService {
   async createLevel(data: { title: string; order: number; language: string }) { return this.prisma.level.create({ data }); }
   async createUnit(data: { title: string; order: number; levelId: string }) { return this.prisma.unit.create({ data }); }
   async createLesson(data: { title: string; order: number; unitId: string; xpReward: number; }) { return this.prisma.lesson.create({ data }); }
-  async deleteLevel(id: string) { return this.prisma.level.delete({ where: { id } }); }
+
+  async deleteLevel(id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Encontrar todas as unidades deste nível
+      const units = await tx.unit.findMany({
+        where: { levelId: id },
+        select: { id: true }
+      });
+      const unitIds = units.map(u => u.id);
+
+      // 2. Encontrar todas as lições dessas unidades
+      const lessons = await tx.lesson.findMany({
+        where: { unitId: { in: unitIds } },
+        select: { id: true }
+      });
+      const lessonIds = lessons.map(l => l.id);
+
+      // 3. LIMPEZA DE PROGRESSO: Apagar registos de UserLesson
+      // Esta é a parte que causava o erro P2014 no Prisma
+      await tx.userLesson.deleteMany({
+        where: { lessonId: { in: lessonIds } }
+      });
+
+      // 4. Apagar as atividades (Activities) vinculadas às lições
+      await tx.activity.deleteMany({
+        where: { lessonId: { in: lessonIds } }
+      });
+
+      // 5. Apagar Lições em cascata
+      await tx.lesson.deleteMany({
+        where: { id: { in: lessonIds } }
+      });
+
+      // 6. Apagar Unidades
+      await tx.unit.deleteMany({
+        where: { id: { in: unitIds } }
+      });
+
+      // 7. Finalmente, apagar o Nível
+      return tx.level.delete({
+        where: { id }
+      });
+    });
+  }
+
+
   async updateLevel(id: string, data: UpdateLevelDto){ return this.prisma.level.update({ where: { id }, data }); }
   async deleteLesson(id: string) { return this.prisma.lesson.delete({ where: { id } }); }
   async updateLesson(id: string, data: UpdateLessonDto) { return this.prisma.lesson.update({ where: { id }, data }); }
