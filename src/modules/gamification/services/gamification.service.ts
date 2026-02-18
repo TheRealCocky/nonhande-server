@@ -92,6 +92,10 @@ export class GamificationService {
     const lang = await this.getLanguageByLesson(dto.lessonId);
     const content = typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
 
+    const metadata = dto.metadata
+      ? (typeof dto.metadata === 'string' ? JSON.parse(dto.metadata) : dto.metadata)
+      : null;
+
     this.validateActivityContent(dto.type, dto.question, content);
 
     if (files?.audio?.[0]) {
@@ -130,6 +134,7 @@ export class GamificationService {
         order: Number(dto.order),
         question: dto.question,
         content: content,
+        metadata: metadata,
         lessonId: dto.lessonId.trim(),
       },
     });
@@ -149,6 +154,9 @@ export class GamificationService {
     const lang = await this.getLanguageByLesson(existingActivity.lessonId);
     const newContent = typeof dto.content === 'string' ? JSON.parse(dto.content) : dto.content;
     const oldContent = existingActivity.content as any;
+    const newMetadata = dto.metadata
+      ? (typeof dto.metadata === 'string' ? JSON.parse(dto.metadata) : dto.metadata)
+      : undefined;
 
     this.validateActivityContent(dto.type, dto.question, newContent);
 
@@ -180,6 +188,7 @@ export class GamificationService {
         order: dto.order ? Number(dto.order) : undefined,
         question: dto.question,
         content: newContent,
+        metadata: newMetadata,
       },
     });
   }
