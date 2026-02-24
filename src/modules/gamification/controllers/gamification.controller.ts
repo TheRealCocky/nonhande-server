@@ -22,6 +22,8 @@ import { Roles } from '../../../common/decorators/roles.decorator';
 
 import { UpdateLevelDto } from '../dto/update-level.dto';
 import { UpdateLessonDto } from '../dto/update-lesson.dto';
+import { CheckPaywall } from '../decorators/paywall.decorator';
+import { PaywallGuard } from '../guards/paywall.guard';
 
 @Controller('gamification')
 @UseGuards(JwtAuthGuard)
@@ -49,6 +51,8 @@ export class GamificationController {
    * ✅ OBTÉM DETALHES DA LIÇÃO
    */
   @Get('lesson/:id')
+  @CheckPaywall()
+  @UseGuards(PaywallGuard)
   async getLesson(@Param('id') id: string, @Req() req: any) {
     const userId = req.user.id;
     return this.gamificationService.getLessonDetails(id, userId);
