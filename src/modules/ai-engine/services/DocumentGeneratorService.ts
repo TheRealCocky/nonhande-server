@@ -50,6 +50,7 @@ export class DocumentGeneratorService implements OnModuleInit {
             const uploadResult = await cloudinary.uploader.upload(filePath, {
               resource_type: 'raw',
               folder: 'nonhande_documents',
+              access_mode: 'public',
             });
 
             if (existsSync(filePath)) {
