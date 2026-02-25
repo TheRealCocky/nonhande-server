@@ -12,6 +12,7 @@ import { TouristAgent } from './agents/tourist.agent';
 import { GeneralAgent } from './agents/general.agent'; // Adicionado
 import { ModelSelectorStrategy } from './strategies/model-selector.strategy'; // Adicionado
 import { DocumentGeneratorService } from './services/DocumentGeneratorService';
+import { MemoryService } from './services/MemoryService';
 @Module({
   controllers: [
     AiChatController,
@@ -28,6 +29,7 @@ import { DocumentGeneratorService } from './services/DocumentGeneratorService';
     TouristAgent,
     GeneralAgent, // Essencial para o fallback de conversas gerais
     DocumentGeneratorService,
+    MemoryService,
   ],
   exports: [AiOrchestratorService],
 })

@@ -28,10 +28,13 @@ model User {
   hearts           Int       @default(5)
   maxHearts        Int       @default(5)
   lastHeartUpdate  DateTime? @default(now())
-  voiceSampleUrl   String? // NOVO: Para futura clonagem de voz do aluno
+  voiceSampleUrl   String?
   streak           Int       @default(0)
   lastStreakUpdate DateTime?
   lastActive       DateTime? @default(now())
+
+  // ✨ RELAÇÃO COM A MEMÓRIA (Corrigido: Apenas uma referência)
+  memory UserMemory?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -194,4 +197,14 @@ model Call {
   startedAt DateTime  @default(now())
   endedAt   DateTime?
   user      User      @relation("UserCalls", fields: [callerId], references: [id])
+}
+
+// --- MEMÓRIA DE LONGO PRAZO (NONHANDE IA) ---
+model UserMemory {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @unique @db.ObjectId
+  facts     String[] // Ex: ["Gosta da Huíla", "Interesse em Nhaneka"]
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
 }

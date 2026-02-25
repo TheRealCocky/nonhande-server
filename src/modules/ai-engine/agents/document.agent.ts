@@ -16,12 +16,20 @@ export class DocumentAgent extends BaseAgent {
     super();
   }
 
-  async execute(query: string, context: string): Promise<AiResponse> {
-    // 1. Gerar o texto sábio através do Groq com o contexto do RAG
-    const prompt = NhanekaExpertPrompt(context, query);
-    const aiText = await this.groq.getChatCompletion(prompt, context);
+  // ✨ Ajuste 1: A assinatura agora aceita memoryContext (opcional)
+  async execute(query: string, context: string, memoryContext?: string): Promise<AiResponse> {
 
-    // 2. Detecção robusta de intenção de criação de ficheiro
+    // ✨ Ajuste 2: Injetar a memória no prompt
+    // Se houver memória, adicionamos ao contexto para o Groq saber com quem fala
+    const enrichedContext = memoryContext
+      ? `${context}\n\n[HISTÓRICO DO UTILIZADOR]: ${memoryContext}`
+      : context;
+
+    // 1. Gerar o texto sábio através do Groq
+    const prompt = NhanekaExpertPrompt(enrichedContext, query);
+    const aiText = await this.groq.getChatCompletion(prompt, enrichedContext);
+
+    // 2. Detecção robusta de intenção de criação de ficheiro (Perfeito!)
     const queryLower = query.toLowerCase();
     const needsPdf =
       queryLower.includes('gera') ||
@@ -34,26 +42,22 @@ export class DocumentAgent extends BaseAgent {
     let fileUrl: string | undefined;
     let fileName: string | undefined;
 
-    // 3. Se o mestre pediu um documento, chamamos o escriba (pdfGenerator)
+    // 3. Se o mestre pediu um documento, chamamos o escriba
     if (needsPdf) {
-      // Nome do ficheiro com timestamp para evitar duplicados
       fileName = `Legado_Nonhande_${Date.now()}.pdf`;
 
       try {
-        // O serviço gera o PDF, sobe para o Cloudinary e devolve o URL seguro
         fileUrl = await this.pdfGenerator.createHistoryPdf(aiText, "Sabedoria Nhaneca - Projeto Nonhande");
       } catch (error) {
         console.error('Erro ao gerar PDF no DocumentAgent:', error);
-        // Não travamos a resposta, apenas enviamos sem o link em caso de falha crítica
       }
     }
 
-    // 4. Retornar o objeto completo conforme a interface AiResponse
     return {
       answer: aiText,
       agentUsed: this.name,
       confidence: 0.98,
-      contextUsed: context,
+      contextUsed: enrichedContext, // Agora inclui a memória
       fileUrl,
       fileName,
     };

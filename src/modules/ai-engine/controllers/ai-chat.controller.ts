@@ -7,7 +7,8 @@ export class AiChatController {
   constructor(private readonly orchestrator: AiOrchestratorService) {}
 
   @Post('chat')
-  async chat(@Body('message') message: string) {
-    return await this.orchestrator.getSmartResponse(message);
+  async chat(@Body() body: { message: string, userId: string }) {
+    // Passa o userId que vem do frontend ou um default
+    return await this.orchestrator.getSmartResponse(body.message, body.userId || 'default_user');
   }
 }

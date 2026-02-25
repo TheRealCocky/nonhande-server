@@ -1,10 +1,10 @@
-// src/modules/ai-engine/controllers/ai-media.controller.ts
 import {
   Controller,
   Post,
   UseInterceptors,
   UploadedFile,
-  InternalServerErrorException,
+  Body,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AiOrchestratorService } from '../services/ai-orchestrator.service';
@@ -14,13 +14,22 @@ export class AiMediaController {
   constructor(private readonly orchestrator: AiOrchestratorService) {}
 
   @Post('transcribe')
-  @UseInterceptors(FileInterceptor('file')) // 'file' é o nome do campo no Postman/Frontend
-  async handleVoice(@UploadedFile() file: Express.Multer.File) {
+  @UseInterceptors(FileInterceptor('file'))
+  async handleVoice(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('userId') userId: string // ✨ Agora recebemos o userId do body
+  ) {
+    // 1. Validação básica de entrada
     if (!file) {
-      throw new InternalServerErrorException('Nenhum ficheiro de áudio enviado.');
+      throw new BadRequestException('Nenhum ficheiro de áudio enviado.');
     }
 
-    // Chama o orquestrador que vai usar o Whisper e depois o RAG do MongoDB
-    return await this.orchestrator.handleVoiceQuery(file);
+    // 2. Garantir que temos um identificador para a memória
+    // Se não vier do frontend, usamos um fallback para não quebrar o código
+    const activeUserId = userId || 'anonymous_user';
+
+    // 3. Chama o orquestrador passando o arquivo E o ID do usuário
+    // Isso resolve o erro TS2554
+    return await this.orchestrator.handleVoiceQuery(file, activeUserId);
   }
 }
