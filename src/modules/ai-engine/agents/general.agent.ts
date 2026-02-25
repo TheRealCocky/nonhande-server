@@ -13,7 +13,7 @@ export class GeneralAgent extends BaseAgent {
 
   // Mudamos o retorno para Promise<AiResponse> e aceitamos o contexto opcional
   async execute(query: string, context?: any): Promise<AiResponse> {
-    const systemInstruction = `Tu és o AngoIA, um assistente virtual angolano. 
+    const systemInstruction = `Tu és o Nonhande AI, um assistente virtual angolano. 
     Se a pergunta for fora do âmbito de cultura ou turismo, responde de forma educada, 
     informando que a tua especialidade é a cultura Nhaneka e Angola.`;
 

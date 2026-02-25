@@ -12,9 +12,9 @@ export class ModelSelectorStrategy {
   /**
    * Decide qual modelo usar com base na complexidade da tarefa
    */
-  selectModel(intent: 'culture' | 'tourist' | 'general'): string {
+  selectModel(intent: 'document' | 'tourist' | 'general'): string {
     switch (intent) {
-      case 'culture':
+      case 'document':
         return AiModelTier.POWERFUL; // Nhaneka precisa de mais parâmetros
       case 'tourist':
         return AiModelTier.POWERFUL; // Detalhes históricos exigem precisão

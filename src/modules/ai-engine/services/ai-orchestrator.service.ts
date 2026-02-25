@@ -42,7 +42,7 @@ export class AiOrchestratorService {
 
     // 2. CULTURA / DICIONÁRIO / DOCUMENTOS
     if (forcedAgent === 'culture' || forcedAgent === 'document_expert' || isDocRequest || (!forcedAgent && this.checkIfCulturalIntent(queryLower))) {
-      const model = this.modelSelector.selectModel('culture');
+      const model = this.modelSelector.selectModel('document');
       const vector = await this.hf.generateEmbedding(userQuery);
       const culturalContext = await this.llamaIndex.searchCulturalContext(vector);
 

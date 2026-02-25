@@ -21,7 +21,7 @@ export class GroqStrategy {
         messages: [
           {
             role: 'system',
-            content: `Tu és o AngoIA, um especialista na cultura e língua Nhaneka de Angola. 
+            content: `Tu és o Nonhande AI, um especialista na cultura e língua Nhaneka de Angola. 
                      Usa o seguinte contexto para responder, mas fala de forma natural e educativa: ${context}`,
           },
           {
