@@ -25,7 +25,6 @@ export class DocumentGeneratorService implements OnModuleInit {
     const filePath = join(this.uploadDir, fileName);
 
     return new Promise((resolve, reject) => {
-      // @ts-ignore - PDFDocument pode causar erro de tipagem em alguns ambientes
       const doc = new PDFDocument({ margin: 50 });
       const stream = createWriteStream(filePath);
 
