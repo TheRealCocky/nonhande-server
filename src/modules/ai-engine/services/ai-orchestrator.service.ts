@@ -18,38 +18,53 @@ export class AiOrchestratorService {
     private readonly modelSelector: ModelSelectorStrategy, // Injetar o seletor
   ) {}
 
-  async getSmartResponse(userQuery: string) {
+  async getSmartResponse(userQuery: string, forcedAgent?: string) {
     const queryLower = userQuery.toLowerCase();
 
     // 1. TURISMO
-    if (this.checkIfTouristIntent(queryLower)) {
-      const model = this.modelSelector.selectModel('tourist'); // Seleciona o modelo ideal
-      const touristAnswer = await this.touristAgent.execute(userQuery); // Podes passar o 'model' como parâmetro se desejares
-      return { text: touristAnswer, agent: this.touristAgent.name, model };
-    }
-
-    // 2. CULTURA / DICIONÁRIO (RAG)
-    if (this.checkIfCulturalIntent(queryLower)) {
-      const model = this.modelSelector.selectModel('culture');
-      const vector = await this.hf.generateEmbedding(userQuery);
-      const culturalContext = await this.llamaIndex.searchCulturalContext(vector);
-      const answer = await this.docAgent.execute(userQuery, culturalContext);
+    // Nota: Mudei para 'tourist_guide' para bater com o teu name no TouristAgent
+    if (forcedAgent === 'tourist' || (!forcedAgent && this.checkIfTouristIntent(queryLower))) {
+      const model = this.modelSelector.selectModel('tourist');
+      const result = await this.touristAgent.execute(userQuery);
 
       return {
-        text: answer,
-        sourceContext: culturalContext,
-        agent: this.docAgent.name,
-        model
+        text: result.answer, // Extraímos a string do objeto
+        agent: result.agentUsed,
+        model,
+        confidence: result.confidence
       };
     }
 
-    // 3. PADRÃO (FALLBACK)
+    // 2. CULTURA / DICIONÁRIO / DOCUMENTOS
+    // Nota: 'culture' ou 'document_expert'
+    if (forcedAgent === 'culture' || forcedAgent === 'document_expert' || (!forcedAgent && this.checkIfCulturalIntent(queryLower))) {
+      const model = this.modelSelector.selectModel('culture');
+      const vector = await this.hf.generateEmbedding(userQuery);
+      const culturalContext = await this.llamaIndex.searchCulturalContext(vector);
+
+      // O docAgent agora faz tudo: pensa e gera PDF se necessário
+      const result = await this.docAgent.execute(userQuery, culturalContext);
+
+      return {
+        text: result.answer,
+        sourceContext: culturalContext,
+        agent: result.agentUsed,
+        model,
+        fileUrl: result.fileUrl, // 📄 O link do PDF vai aqui!
+        fileName: result.fileName,
+        confidence: result.confidence
+      };
+    }
+
+    // 3. PADRÃO (FALLBACK - AngoIA)
     const model = this.modelSelector.selectModel('general');
-    const generalAnswer = await this.generalAgent.execute(userQuery);
+    const result = await this.generalAgent.execute(userQuery);
+
     return {
-      text: generalAnswer,
-      agent: this.generalAgent.name,
-      model
+      text: result.answer,
+      agent: result.agentUsed,
+      model,
+      confidence: result.confidence
     };
   }
 

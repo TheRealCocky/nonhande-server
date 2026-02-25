@@ -1,5 +1,7 @@
-// src/modules/ai-engine/agents/base.agent.ts
+import { AiResponse } from '../interfaces/ai-response.interface';
+
 export abstract class BaseAgent {
   abstract name: string;
-  abstract execute(query: string, context?: any): Promise<string>;
+  // Muda de Promise<string> para Promise<AiResponse>
+  abstract execute(query: string, context?: any): Promise<AiResponse>;
 }

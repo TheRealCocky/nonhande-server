@@ -1,8 +1,8 @@
-// src/modules/ai-engine/agents/tourist.agent.ts
 import { Injectable } from '@nestjs/common';
 import { BaseAgent } from './base.agent';
 import { GroqStrategy } from '../strategies/groq.strategy';
 import { TouristExpertPrompt } from '../prompt-builders/agent-tourist.prompt';
+import { AiResponse } from '../interfaces/ai-response.interface'; // Importar a interface
 
 @Injectable()
 export class TouristAgent extends BaseAgent {
@@ -12,10 +12,21 @@ export class TouristAgent extends BaseAgent {
     super();
   }
 
-  async execute(query: string): Promise<string> {
+  // Mudamos para Promise<AiResponse> e adicionamos o context opcional para bater com o BaseAgent
+  async execute(query: string, context?: any): Promise<AiResponse> {
     const prompt = TouristExpertPrompt(query);
-    // Para o guia turístico, usamos o conhecimento geral do Llama 3 sobre o mundo
-    // sem precisar de contexto do MongoDB (por enquanto)
-    return await this.groq.getChatCompletion(prompt, 'Conhecimento geral sobre o turismo em Angola');
+
+    // Mantemos a tua lógica de passar o conhecimento geral como contexto para o Groq
+    const answer = await this.groq.getChatCompletion(
+      prompt,
+      'Conhecimento geral sobre o turismo em Angola'
+    );
+
+    return {
+      answer,
+      agentUsed: this.name,
+      confidence: 0.90, // Confiança alta para turismo
+      contextUsed: context || 'Conhecimento geral sobre o turismo em Angola'
+    };
   }
 }
