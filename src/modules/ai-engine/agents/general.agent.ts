@@ -13,16 +13,20 @@ export class GeneralAgent extends BaseAgent {
   }
 
   async execute(query: string, context?: any): Promise<AiResponse> {
-    // ✨ PASSAMOS O CONTEXTO PARA O PROMPT BUILDER
-    const systemInstruction = GENERAL_AGENT_PROMPT(query, context);
+    // 1. Definimos um array vazio para os factos (por enquanto)
+    const facts: string[] = [];
 
+    // 2. ✨ PASSAMOS OS 3 ARGUMENTOS NA ORDEM CORRETA
+    const systemInstruction = GENERAL_AGENT_PROMPT(query, context, facts);
+
+    // 3. Chamamos a Groq
     const answer = await this.groq.getChatCompletion(query, systemInstruction);
 
     return {
       answer,
       agentUsed: this.name,
       confidence: 0.98,
-      contextUsed: context, // Aqui já estava bem, mas é só para o log
+      contextUsed: context,
     };
   }
 }

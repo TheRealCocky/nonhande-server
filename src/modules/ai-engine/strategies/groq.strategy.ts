@@ -15,23 +15,21 @@ export class GroqStrategy {
     this.groq = new Groq({ apiKey });
   }
 
-  async getChatCompletion(prompt: string, context: string): Promise<string> {
+  async getChatCompletion(prompt: string, systemInstruction: string): Promise<string> {
     try {
       const completion = await this.groq.chat.completions.create({
         messages: [
           {
             role: 'system',
-            content: `Tu és o Nonhande AI, um especialista na cultura e língua Nhaneka de Angola. 
-                     Usa o seguinte contexto para responder, mas fala de forma natural e educativa: ${context}`,
+            content: systemInstruction, // ✨ AGORA ELA RECEBE AS ORDENS DO PROMPTBUILDER
           },
           {
             role: 'user',
             content: prompt,
           },
         ],
-        // ATUALIZAÇÃO DO MODELO AQUI
-        model: 'llama-3.3-70b-versatile', // Modelo potente e atualizado
-        temperature: 0.5,
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0.2, // 🎯 BAIXAMOS A TEMPERATURA: Mais obediência, menos conversa fiada.
         max_tokens: 1024,
       });
 
