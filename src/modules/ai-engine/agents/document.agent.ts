@@ -16,20 +16,28 @@ export class DocumentAgent extends BaseAgent {
     super();
   }
 
-  // ✨ Ajuste 1: A assinatura agora aceita memoryContext (opcional)
-  async execute(query: string, context: string, memoryContext?: string): Promise<AiResponse> {
+  /**
+   * Executa a lógica de especialista em cultura e geração de documentos.
+   * 🎯 Adicionamos 'useBackup' para garantir que o PDF seja gerado mesmo sob tráfego alto.
+   */
+  async execute(query: string, context: string, memoryContext?: string, useBackup = false): Promise<AiResponse> {
 
-    // ✨ Ajuste 2: Injetar a memória no prompt
-    // Se houver memória, adicionamos ao contexto para o Groq saber com quem fala
+    // 1. Enriquecer o contexto com a memória do utilizador
     const enrichedContext = memoryContext
       ? `${context}\n\n[HISTÓRICO DO UTILIZADOR]: ${memoryContext}`
       : context;
 
-    // 1. Gerar o texto sábio através do Groq
+    // 2. Gerar o texto sábio através do Groq (Passando o sinal de backup)
     const prompt = NhanekaExpertPrompt(enrichedContext, query);
-    const aiText = await this.groq.getChatCompletion(prompt, enrichedContext);
 
-    // 2. Detecção robusta de intenção de criação de ficheiro (Perfeito!)
+    // ✨ O SEGREDO: Passamos o useBackup para a GroqStrategy
+    const aiText = await this.groq.getChatCompletion(
+      prompt,
+      enrichedContext,
+      useBackup
+    );
+
+    // 3. Deteção de intenção de criação de ficheiro
     const queryLower = query.toLowerCase();
     const needsPdf =
       queryLower.includes('gera') ||
@@ -42,7 +50,7 @@ export class DocumentAgent extends BaseAgent {
     let fileUrl: string | undefined;
     let fileName: string | undefined;
 
-    // 3. Se o mestre pediu um documento, chamamos o escriba
+    // 4. Se o mestre pediu um documento, chamamos o escriba
     if (needsPdf) {
       fileName = `Legado_Nonhande_${Date.now()}.pdf`;
 
@@ -57,7 +65,7 @@ export class DocumentAgent extends BaseAgent {
       answer: aiText,
       agentUsed: this.name,
       confidence: 0.98,
-      contextUsed: enrichedContext, // Agora inclui a memória
+      contextUsed: enrichedContext,
       fileUrl,
       fileName,
     };

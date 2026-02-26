@@ -12,15 +12,16 @@ export class GeneralAgent extends BaseAgent {
     super();
   }
 
-  async execute(query: string, context?: any): Promise<AiResponse> {
-    // 1. Definimos um array vazio para os factos (por enquanto)
+  async execute(query: string, context?: any, useBackup = false): Promise<AiResponse> {
+    // 1. Definimos um array vazio para os factos
     const facts: string[] = [];
 
-    // 2. ✨ PASSAMOS OS 3 ARGUMENTOS NA ORDEM CORRETA
+    // 2. Mantemos a geração da instrução de sistema
     const systemInstruction = GENERAL_AGENT_PROMPT(query, context, facts);
 
-    // 3. Chamamos a Groq
-    const answer = await this.groq.getChatCompletion(query, systemInstruction);
+    // 3. ✨ O SEGREDO: Passamos o useBackup para a GroqStrategy
+    // Agora a Strategy saberá se deve usar a Chave 1 ou a Chave 2
+    const answer = await this.groq.getChatCompletion(query, systemInstruction, useBackup);
 
     return {
       answer,

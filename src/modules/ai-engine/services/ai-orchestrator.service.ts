@@ -22,10 +22,9 @@ export class AiOrchestratorService {
   ) {}
 
   /**
-   * Processa a pergunta do utilizador com lógica de Fallback Multinível:
-   * 1. Groq Llama 3.3 70B (Principal)
-   * 2. Groq Llama 3.1 8B (Reserva - Quota 5x maior)
-   * 3. Hugging Face Mistral (Segurança)
+   * Processa a pergunta do utilizador com Fallback de Duas Contas Groq:
+   * 1. Groq Conta Principal (Chave 1)
+   * 2. Groq Conta Backup (Chave 2) -> Mesma inteligência, nova quota.
    */
   async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string) {
     const queryLower = userQuery.toLowerCase();
@@ -40,14 +39,14 @@ export class AiOrchestratorService {
     let finalResult;
 
     try {
-      // --- TENTATIVA PRINCIPAL (GROQ 70B via Agentes) ---
+      // --- 🚀 TENTATIVA 1: GROQ CONTA PRINCIPAL ---
       if (forcedAgent === 'tourist' || (!forcedAgent && this.checkIfTouristIntent(queryLower))) {
         const result = await this.touristAgent.execute(userQuery, userMemoryContext);
         finalResult = {
           text: result.answer,
-          agent: result.agentUsed || 'tourist',
+          agent: 'tourist',
           model: 'llama-3.3-70b',
-          confidence: result.confidence || 0.95,
+          confidence: 0.95,
         };
       }
       else if (forcedAgent === 'document_expert' || isDocRequest || (!forcedAgent && this.checkIfCulturalIntent(queryLower))) {
@@ -58,7 +57,7 @@ export class AiOrchestratorService {
         finalResult = {
           text: result.answer,
           sourceContext: culturalContext,
-          agent: result.agentUsed || 'document_expert',
+          agent: 'document_expert',
           model: 'llama-3.3-70b',
           fileUrl: result.fileUrl,
           fileName: result.fileName,
@@ -69,64 +68,56 @@ export class AiOrchestratorService {
         const result = await this.generalAgent.execute(userQuery, userMemoryContext);
         finalResult = {
           text: result.answer,
-          agent: result.agentUsed || 'general',
+          agent: 'general',
           model: 'llama-3.3-70b',
-          confidence: result.confidence
+          confidence: 0.90
         };
       }
 
     } catch (error) {
-      // --- 🛡️ LÓGICA DE FALLBACK (PLANO B: GROQ 8B) ---
+      // --- 🛡️ LÓGICA DE FALLBACK (PLANO B: GROQ SEGUNDA CONTA) ---
       if (error.message.includes('429') || error.message.includes('rate_limit')) {
-        console.warn(`[Nonhande Fallback] Rate Limit no 70B. Tentando Llama 8B na Groq para ${userId}`);
+        console.warn(`[Nonhande Fallback] Chave 1 esgotada. Ativando Segunda Conta Groq para ${userId}`);
 
         try {
-          // Aqui usamos o GeneralAgent que é o mais leve para o fallback
-          const backupResult = await this.generalAgent.execute(userQuery, userMemoryContext);
+          // 🎯 O SEGREDO: Passamos o sinal 'true' para os agentes usarem a GROQ_API_KEY_BACKUP
+          // Nota: Precisas de ajustar os teus agents para aceitarem este 3º parâmetro
+          const backupResult = await this.generalAgent.execute(userQuery, userMemoryContext, true);
 
           finalResult = {
-            text: backupResult.answer + "\n\n*(Modo de economia de energia ativo)*",
-            agent: 'groq_8b_fallback',
-            model: 'llama-3.1-8b-instant',
-            confidence: 0.80,
+            text: backupResult.answer,
+            agent: 'groq_account_backup',
+            model: 'llama-3.3-70b',
+            confidence: 0.90,
             isFallback: true
           };
         } catch (backupError) {
-          // --- 🛡️ PLANO C: HUGGING FACE (A ÚLTIMA LINHA) ---
-          console.error(`[Nonhande Fallback] Groq 8B falhou também. Indo para Hugging Face.`);
-
-          const backupSystemInstruction = `Tu és a Nonhande AI (Modo de Segurança). Contexto do mestre: ${userMemoryContext}`;
-          const hfAnswer = await this.hf.getChatCompletion(userQuery, backupSystemInstruction);
-
-          finalResult = {
-            text: hfAnswer,
-            agent: 'hf_backup',
-            model: 'mistral-7b',
-            confidence: 0.70,
-            isFallback: true
-          };
+          // Se as duas contas da Groq falharem...
+          console.error(`[Nonhande Crítico] Ambas as contas Groq atingiram o limite.`);
+          throw new InternalServerErrorException('Estamos com muito tráfego agora. Tenta novamente em breve!');
         }
       } else {
-        throw new InternalServerErrorException('Erro no Orchestrator: ' + error.message);
+        throw new InternalServerErrorException('Erro no Orquestrador: ' + error.message);
       }
     }
 
-    // 🧠 ATUALIZAÇÃO DE MEMÓRIA (Silenciosa)
+    // 🧠 ATUALIZAÇÃO DE MEMÓRIA (Background)
     this.memoryService.updateMemory(userId, userQuery, finalResult.text, finalResult.agent).catch(err =>
-      console.error('[Nonhande Memory] Erro ao atualizar:', err)
+      console.error('[Nonhande Memory] Erro:', err)
     );
 
     return finalResult;
   }
 
   /**
-   * Orquestra o fluxo de voz
+   * Orquestra o fluxo de voz (Usa HF apenas para Whisper)
    */
   async handleVoiceQuery(audioFile: Express.Multer.File, userId: string) {
     const processedBuffer = await this.audioService.processAudioForTranscription(audioFile);
+
+    // Whisper no HF continua firme e forte (não precisa de fallback de chat)
     let transcribedText = await this.hf.transcribeAudio(processedBuffer);
 
-    // Correção fonética para termos Nhaneka
     const phoneticMap: Record<string, string> = {
       'duende': 'tuende', 'kowila': 'ko huila', 'er det': 'ekumbi',
       'kombi': 'ekumbi', 'conbi': 'ekumbi', 'tu em de': 'tuende'
