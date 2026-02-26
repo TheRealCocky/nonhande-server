@@ -10,33 +10,37 @@ export class MemoryService {
   ) {}
 
   /**
-   * 🧠 Recupera o contexto completo: Factos + Últimas 5 mensagens.
-   * Isso permite que a IA resolva frases como "E como chego lá?".
+   * Validação interna para evitar Malformed ObjectID (Erro P2023)
    */
+  private isValidObjectId(id: string): boolean {
+    return /^[0-9a-fA-F]{24}$/.test(id);
+  }
+
   async getUserContext(userId: string): Promise<string> {
+    // 🛡️ Proteção contra IDs temporários (ex: 'utilizador_logado')
+    if (!this.isValidObjectId(userId)) {
+      return "Novo utilizador. Sê acolhedor e foca-te na cultura de Angola.";
+    }
+
     try {
-      // 1. Fazemos as duas buscas em paralelo para ganhar milissegundos
       const [memory, recentHistory] = await Promise.all([
         this.prisma.userMemory.findUnique({ where: { userId } }),
         this.prisma.chatHistory.findMany({
           where: { userId },
           orderBy: { createdAt: 'desc' },
-          take: 5, // Suficiente para manter o fio da meada sem "encher" o prompt
+          take: 5,
         }),
       ]);
 
-      // 2. Formatamos o Histórico (da mais antiga para a mais recente)
       const conversation = recentHistory
         .reverse()
         .map((h) => `User: ${h.query} | Nonhande: ${h.answer}`)
         .join('\n');
 
-      // 3. Formatamos os Factos
       const facts = memory?.facts?.length
         ? `Factos sobre o mestre: ${memory.facts.join(', ')}.`
         : "Novo utilizador.";
 
-      // 4. Se não houver nada, damos a instrução padrão
       if (!conversation && !memory) {
         return "Este é um novo utilizador. Sê acolhedor e foca-te na cultura de Angola.";
       }
@@ -55,22 +59,19 @@ ${facts}
     }
   }
 
-  /**
-   * 💾 Guarda a mensagem atual e extrai factos importantes.
-   */
   async updateMemory(userId: string, lastUserMsg: string, aiResponse: string) {
+    // 🛡️ Impede a criação de registros com IDs inválidos
+    if (!this.isValidObjectId(userId)) return;
+
     try {
-      // 1. Guardar SEMPRE no Histórico (Obrigatório para continuidade)
       await this.prisma.chatHistory.create({
         data: {
           userId,
           query: lastUserMsg,
           answer: aiResponse,
-          // Podes adicionar o agent aqui se quiseres tracking
         }
       });
 
-      // 2. Extração de Factos Permanentes
       const lowerMsg = lastUserMsg.toLowerCase();
       let newFact = '';
 
@@ -78,7 +79,6 @@ ${facts}
         newFact = `Interesse: ${lastUserMsg}`;
       }
 
-      // 3. Se for um facto novo, faz o Upsert na UserMemory
       if (newFact) {
         await this.prisma.userMemory.upsert({
           where: { userId },
