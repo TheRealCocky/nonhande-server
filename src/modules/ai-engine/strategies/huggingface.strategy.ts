@@ -98,46 +98,42 @@ export class HuggingFaceStrategy {
 
   async getChatCompletion(prompt: string, systemInstruction: string): Promise<string> {
     try {
-      // 🎯 URL mais direta e estável para o Router do HF
-      const url = `https://router.huggingface.co/hf-inference/models/${this.chatModel}`;
+      // 🎯 URL Clássica - Mais estável para o plano free
+      const url = `https://api-inference.huggingface.co/models/${this.chatModel}`;
 
-      const response = await fetch(
-        url,
-        {
-          headers: {
-            Authorization: `Bearer ${this.hfToken}`,
-            'Content-Type': 'application/json',
-            'x-wait-for-model': 'true', // Força o HF a carregar o modelo se estiver "dormindo"
-          },
-          method: 'POST',
-          body: JSON.stringify({
-            // Formato de texto simples que o Inference API adora
-            inputs: `<s>[INST] ${systemInstruction} \n\n Pergunta: ${prompt} [/INST]`,
-            parameters: {
-              max_new_tokens: 1024,
-              temperature: 0.2,
-              return_full_text: false // Para não repetir o prompt na resposta
-            }
-          }),
-        }
-      );
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${this.hfToken}`,
+          'Content-Type': 'application/json',
+          'x-wait-for-model': 'true',
+        },
+        method: 'POST',
+        body: JSON.stringify({
+          // Formato que a Inference API entende sem precisar de /v1/
+          inputs: `<s>[INST] ${systemInstruction} \n\n ${prompt} [/INST]`,
+          parameters: {
+            max_new_tokens: 500,
+            temperature: 0.2,
+          }
+        }),
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`HF Chat Error (${response.status}): ${errorText}`);
+        throw new Error(`HF API Error (${response.status}): ${errorText}`);
       }
 
       const result = await response.json();
 
-      // O HF devolve um array: [{ generated_text: "..." }]
+      // No api-inference, o resultado vem sempre em Array
       if (Array.isArray(result) && result[0]?.generated_text) {
         return result[0].generated_text.trim();
       }
 
-      return typeof result === 'string' ? result : 'Sem resposta do backup.';
+      return 'Resposta indisponível no momento.';
     } catch (error) {
-      console.error('Erro HF Chat:', error.message);
-      throw new InternalServerErrorException('Falha no Backup HuggingFace: ' + error.message);
+      console.error('Erro HF:', error.message);
+      throw new InternalServerErrorException('Falha no Backup: ' + error.message);
     }
   }
 }

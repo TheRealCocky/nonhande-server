@@ -97,16 +97,18 @@ ${facts}
       }
 
       if (newFact) {
+        // Limpeza básica: remove pontos finais e espaços extras
+        const cleanFact = newFact.replace(/[.!]/g, '').trim();
+
         await this.prisma.userMemory.upsert({
           where: { userId },
           update: {
-            facts: { push: newFact },
+            // Usar set com filtro para evitar duplicados seria o ideal,
+            // mas o push resolve se limpares antes.
+            facts: { push: cleanFact },
             updatedAt: new Date(),
           },
-          create: {
-            userId,
-            facts: [newFact]
-          }
+          create: { userId, facts: [cleanFact] }
         });
       }
     } catch (error) {
