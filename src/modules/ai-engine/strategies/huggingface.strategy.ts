@@ -98,23 +98,26 @@ export class HuggingFaceStrategy {
 
   async getChatCompletion(prompt: string, systemInstruction: string): Promise<string> {
     try {
-      // 🎯 Mudamos de 'api-inference' para 'router' conforme o erro 410 sugeriu
+      // 🎯 URL mais direta e estável para o Router do HF
+      const url = `https://router.huggingface.co/hf-inference/models/${this.chatModel}`;
+
       const response = await fetch(
-        `https://router.huggingface.co/hf-inference/models/${this.chatModel}/v1/chat/completions`,
+        url,
         {
           headers: {
             Authorization: `Bearer ${this.hfToken}`,
             'Content-Type': 'application/json',
+            'x-wait-for-model': 'true', // Força o HF a carregar o modelo se estiver "dormindo"
           },
           method: 'POST',
           body: JSON.stringify({
-            model: this.chatModel,
-            messages: [
-              { role: 'system', content: systemInstruction },
-              { role: 'user', content: prompt }
-            ],
-            max_tokens: 1024,
-            temperature: 0.2,
+            // Formato de texto simples que o Inference API adora
+            inputs: `<s>[INST] ${systemInstruction} \n\n Pergunta: ${prompt} [/INST]`,
+            parameters: {
+              max_new_tokens: 1024,
+              temperature: 0.2,
+              return_full_text: false // Para não repetir o prompt na resposta
+            }
           }),
         }
       );
@@ -125,7 +128,13 @@ export class HuggingFaceStrategy {
       }
 
       const result = await response.json();
-      return result.choices[0]?.message?.content || 'A Nonhande (Backup) está a descansar...';
+
+      // O HF devolve um array: [{ generated_text: "..." }]
+      if (Array.isArray(result) && result[0]?.generated_text) {
+        return result[0].generated_text.trim();
+      }
+
+      return typeof result === 'string' ? result : 'Sem resposta do backup.';
     } catch (error) {
       console.error('Erro HF Chat:', error.message);
       throw new InternalServerErrorException('Falha no Backup HuggingFace: ' + error.message);
