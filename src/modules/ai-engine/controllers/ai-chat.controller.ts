@@ -29,7 +29,8 @@ export class AiChatController {
     }
   ) {
     const { message, userId, agent } = body;
-
+    //🔍 LOG DE DEBUG: Vamos ver quem está a tentar falar
+    console.log(`[Nonhande Debug] User: ${userId} | Msg: ${message} | Agent: ${agent}`);
     if (!message || !userId) {
       throw new BadRequestException('Mestre, faltam dados (mensagem ou userId).');
     }
