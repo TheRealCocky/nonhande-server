@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-
+import { GroqStrategy } from '../strategies/groq.strategy';
 @Injectable()
 export class MemoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService,
+  private readonly groq: GroqStrategy,
+  ) {}
 
   private isValidObjectId(id: string): boolean {
     return /^[0-9a-fA-F]{24}$/.test(id);
@@ -49,6 +51,25 @@ ${facts}
       console.error('[Nonhande Memory] Erro ao recuperar contexto:', error);
       return "Contexto indisponível. Foca-te na cultura angolana.";
     }
+  }
+
+  async extractAndSaveFacts(userId: string, history: any[]) {
+    // 1. Só corremos isto se houver histórico suficiente (ex: a cada 10 mensagens)
+    if (history.length < 10) return;
+
+    const conversationText = history.map(h => h.query).join(" | ");
+
+    // 2. Pedimos a uma IA rápida (Groq/Llama) para resumir em 3 pontos
+    const extractionPrompt = `Extrai 3 factos curtos sobre as preferências deste utilizador baseando-te nisto: ${conversationText}. Responde apenas com os factos separados por vírgulas.`;
+
+    const facts = await this.groq.getChatCompletion(extractionPrompt, "És um extrator de dados.");
+
+    // 3. Guardar no teu modelo UserMemory (MongoDB)
+    await this.prisma.userMemory.upsert({
+      where: { userId },
+      update: { facts: { push: facts.split(',') } },
+      create: { userId, facts: facts.split(',') }
+    });
   }
 
   // ✨ Adicionámos o parâmetro 'agent' para persistência correta

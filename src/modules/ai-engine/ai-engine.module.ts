@@ -34,6 +34,6 @@ import { ChatCleanupService } from './services/ChatCleanupService'; // ✨ Impor
     MemoryService,
     ChatCleanupService,
   ],
-  exports: [AiOrchestratorService],
+  exports: [AiOrchestratorService, MemoryService, GroqStrategy],
 })
 export class AiEngineModule {}
