@@ -8,18 +8,19 @@ export class HuggingFaceStrategy {
   private readonly modelId = 'intfloat/multilingual-e5-large';
   // O modelo Whisper para transcrição de voz
   private readonly whisperModel = 'openai/whisper-large-v3';
-  // 🎯 Plano B: Modelo potente para Chat quando o Groq falha
-  private readonly chatModel = 'Qwen/Qwen2.5-72B-Instruct';
+  // 🎯 Plano B: Mistral é o mais estável para o Router no plano Free
+  private readonly chatModel = 'mistralai/Mistral-7B-Instruct-v0.3';
 
   /**
    * Transcreve áudio para texto usando o Whisper Large v3
    */
   async transcribeAudio(audioBuffer: Buffer): Promise<string> {
     try {
-      const url = new URL(`https://router.huggingface.co/hf-inference/models/${this.whisperModel}`);
+      // 🎯 Atualizado para router.huggingface.co
+      const url = `https://router.huggingface.co/hf-inference/models/${this.whisperModel}`;
 
       const response = await fetch(
-        url.toString(),
+        url,
         {
           headers: {
             Authorization: `Bearer ${this.hfToken}`,
@@ -60,9 +61,11 @@ export class HuggingFaceStrategy {
   async generateEmbedding(text: string): Promise<number[]> {
     try {
       const input = `query: ${text}`;
+      // 🎯 Atualizado para router.huggingface.co
+      const url = `https://router.huggingface.co/hf-inference/models/${this.modelId}`;
 
       const response = await fetch(
-        `https://router.huggingface.co/hf-inference/models/${this.modelId}`,
+        url,
         {
           headers: {
             Authorization: `Bearer ${this.hfToken}`,
@@ -95,26 +98,25 @@ export class HuggingFaceStrategy {
    * ✨ NOVO: Método de Chat para Fallback (Plano B)
    * Usado quando o Groq bate no Rate Limit (429)
    */
-
   async getChatCompletion(prompt: string, systemInstruction: string): Promise<string> {
     try {
-      // 🎯 URL Clássica - Mais estável para o plano free
-      const url = `https://api-inference.huggingface.co/models/${this.chatModel}`;
+      // 🎯 A URL correta para evitar o erro 410 e 404
+      const url = `https://router.huggingface.co/hf-inference/models/${this.chatModel}/v1/chat/completions`;
 
       const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${this.hfToken}`,
           'Content-Type': 'application/json',
-          'x-wait-for-model': 'true',
         },
         method: 'POST',
         body: JSON.stringify({
-          // Formato que a Inference API entende sem precisar de /v1/
-          inputs: `<s>[INST] ${systemInstruction} \n\n ${prompt} [/INST]`,
-          parameters: {
-            max_new_tokens: 500,
-            temperature: 0.2,
-          }
+          model: this.chatModel,
+          messages: [
+            { role: 'system', content: systemInstruction },
+            { role: 'user', content: prompt }
+          ],
+          max_tokens: 500,
+          temperature: 0.2,
         }),
       });
 
@@ -125,15 +127,11 @@ export class HuggingFaceStrategy {
 
       const result = await response.json();
 
-      // No api-inference, o resultado vem sempre em Array
-      if (Array.isArray(result) && result[0]?.generated_text) {
-        return result[0].generated_text.trim();
-      }
-
-      return 'Resposta indisponível no momento.';
+      // Formato padrão OpenAI retornado pelo Router do HF
+      return result.choices?.[0]?.message?.content?.trim() || 'Resposta indisponível no momento.';
     } catch (error) {
-      console.error('Erro HF:', error.message);
-      throw new InternalServerErrorException('Falha no Backup: ' + error.message);
+      console.error('Erro HF Backup:', error.message);
+      throw new InternalServerErrorException('Falha no Backup HuggingFace: ' + error.message);
     }
   }
 }

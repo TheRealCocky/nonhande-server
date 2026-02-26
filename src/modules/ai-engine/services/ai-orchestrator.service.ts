@@ -22,13 +22,13 @@ export class AiOrchestratorService {
   ) {}
 
   /**
-   * Processa a pergunta do utilizador, seleciona o agente adequado e gera a resposta.
-   * Agora com Fallback automático para Hugging Face em caso de Rate Limit (429).
+   * Processa a pergunta do utilizador com lógica de Fallback Multinível:
+   * 1. Groq Llama 3.3 70B (Principal)
+   * 2. Groq Llama 3.1 8B (Reserva - Quota 5x maior)
+   * 3. Hugging Face Mistral (Segurança)
    */
   async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string) {
     const queryLower = userQuery.toLowerCase();
-
-    // 🧠 RECUPERAÇÃO DE MEMÓRIA
     const userMemoryContext = await this.memoryService.getUserContext(userId);
 
     const isDocRequest =
@@ -40,98 +40,101 @@ export class AiOrchestratorService {
     let finalResult;
 
     try {
-      // --- TENTATIVA COM AGENTES (GROQ) ---
+      // --- TENTATIVA PRINCIPAL (GROQ 70B via Agentes) ---
       if (forcedAgent === 'tourist' || (!forcedAgent && this.checkIfTouristIntent(queryLower))) {
-        const model = this.modelSelector.selectModel('tourist');
         const result = await this.touristAgent.execute(userQuery, userMemoryContext);
-
         finalResult = {
           text: result.answer,
           agent: result.agentUsed || 'tourist',
-          model,
+          model: 'llama-3.3-70b',
           confidence: result.confidence || 0.95,
         };
       }
       else if (forcedAgent === 'document_expert' || isDocRequest || (!forcedAgent && this.checkIfCulturalIntent(queryLower))) {
-        const model = this.modelSelector.selectModel('document');
         const vector = await this.hf.generateEmbedding(userQuery);
         const culturalContext = await this.llamaIndex.searchCulturalContext(vector);
-
         const result = await this.docAgent.execute(userQuery, culturalContext, userMemoryContext);
 
         finalResult = {
           text: result.answer,
           sourceContext: culturalContext,
           agent: result.agentUsed || 'document_expert',
-          model,
+          model: 'llama-3.3-70b',
           fileUrl: result.fileUrl,
           fileName: result.fileName,
           confidence: result.confidence
         };
       }
       else {
-        const model = this.modelSelector.selectModel('general');
         const result = await this.generalAgent.execute(userQuery, userMemoryContext);
-
         finalResult = {
           text: result.answer,
           agent: result.agentUsed || 'general',
-          model,
+          model: 'llama-3.3-70b',
           confidence: result.confidence
         };
       }
 
     } catch (error) {
-      // --- 🛡️ LÓGICA DE FALLBACK (PLANO B) ---
-      // Se a Groq der erro de limite (429) ou erro de sobrecarga
+      // --- 🛡️ LÓGICA DE FALLBACK (PLANO B: GROQ 8B) ---
       if (error.message.includes('429') || error.message.includes('rate_limit')) {
-        console.warn(`[Nonhande Fallback] Rate Limit na Groq. Ativando Hugging Face para o user ${userId}`);
+        console.warn(`[Nonhande Fallback] Rate Limit no 70B. Tentando Llama 8B na Groq para ${userId}`);
 
-        // Criamos uma instrução rápida para o backup não perder a identidade
-        const backupSystemInstruction = `
-          Tu és a Nonhande AI (Modo de Segurança). 
-          Responde de forma direta e útil sobre Angola/Cultura Nhaneka.
-          Histórico do utilizador: ${userMemoryContext}
-        `;
+        try {
+          // Aqui usamos o GeneralAgent que é o mais leve para o fallback
+          const backupResult = await this.generalAgent.execute(userQuery, userMemoryContext);
 
-        const backupAnswer = await this.hf.getChatCompletion(userQuery, backupSystemInstruction);
+          finalResult = {
+            text: backupResult.answer + "\n\n*(Modo de economia de energia ativo)*",
+            agent: 'groq_8b_fallback',
+            model: 'llama-3.1-8b-instant',
+            confidence: 0.80,
+            isFallback: true
+          };
+        } catch (backupError) {
+          // --- 🛡️ PLANO C: HUGGING FACE (A ÚLTIMA LINHA) ---
+          console.error(`[Nonhande Fallback] Groq 8B falhou também. Indo para Hugging Face.`);
 
-        finalResult = {
-          text: backupAnswer,
-          agent: 'hf_backup',
-          model: 'Qwen-2.5-72B', // Definido no teu HF Strategy
-          confidence: 0.85,
-          isFallback: true
-        };
+          const backupSystemInstruction = `Tu és a Nonhande AI (Modo de Segurança). Contexto do mestre: ${userMemoryContext}`;
+          const hfAnswer = await this.hf.getChatCompletion(userQuery, backupSystemInstruction);
+
+          finalResult = {
+            text: hfAnswer,
+            agent: 'hf_backup',
+            model: 'mistral-7b',
+            confidence: 0.70,
+            isFallback: true
+          };
+        }
       } else {
-        // Se for outro erro qualquer, lança para o log do sistema
         throw new InternalServerErrorException('Erro no Orchestrator: ' + error.message);
       }
     }
 
-    // 🧠 ATUALIZAÇÃO DE MEMÓRIA (Background Task)
+    // 🧠 ATUALIZAÇÃO DE MEMÓRIA (Silenciosa)
     this.memoryService.updateMemory(userId, userQuery, finalResult.text, finalResult.agent).catch(err =>
-      console.error('[Nonhande IA] Erro ao atualizar memória:', err)
+      console.error('[Nonhande Memory] Erro ao atualizar:', err)
     );
 
     return finalResult;
   }
 
   /**
-   * Orquestra o fluxo de voz: Transcrição -> Inteligência -> Preparação para Fala
+   * Orquestra o fluxo de voz
    */
   async handleVoiceQuery(audioFile: Express.Multer.File, userId: string) {
     const processedBuffer = await this.audioService.processAudioForTranscription(audioFile);
     let transcribedText = await this.hf.transcribeAudio(processedBuffer);
 
+    // Correção fonética para termos Nhaneka
     const phoneticMap: Record<string, string> = {
       'duende': 'tuende', 'kowila': 'ko huila', 'er det': 'ekumbi',
       'kombi': 'ekumbi', 'conbi': 'ekumbi', 'tu em de': 'tuende'
     };
 
-    Object.keys(phoneticMap).forEach((error) => {
-      const regex = new RegExp(`\\b${error}\\b`, 'gi');
-      transcribedText = transcribedText.replace(regex, phoneticMap[error]);
+    Object.keys(phoneticMap).forEach((term) => {
+      const regex = new RegExp(`\\b${term}\\b`, 'gi');
+      transcribedText = transcribedText.replace(regex, phoneticMap[term]);
     });
 
     const result = await this.getSmartResponse(transcribedText, userId);
