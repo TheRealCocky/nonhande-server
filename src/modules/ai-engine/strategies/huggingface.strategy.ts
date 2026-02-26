@@ -95,10 +95,12 @@ export class HuggingFaceStrategy {
    * ✨ NOVO: Método de Chat para Fallback (Plano B)
    * Usado quando o Groq bate no Rate Limit (429)
    */
+
   async getChatCompletion(prompt: string, systemInstruction: string): Promise<string> {
     try {
+      // 🎯 Mudamos de 'api-inference' para 'router' conforme o erro 410 sugeriu
       const response = await fetch(
-        `https://api-inference.huggingface.co/models/${this.chatModel}/v1/chat/completions`,
+        `https://router.huggingface.co/hf-inference/models/${this.chatModel}/v1/chat/completions`,
         {
           headers: {
             Authorization: `Bearer ${this.hfToken}`,
