@@ -42,6 +42,10 @@ model User {
   wordProgress   Progress[]
   lessonProgress UserLesson[]
   calls          Call[]       @relation("UserCalls")
+
+  ChatHistory ChatHistory[]
+
+  UserDocument UserDocument[]
 }
 
 enum Role {
@@ -213,11 +217,28 @@ model UserMemory {
 model ChatHistory {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   userId    String   @db.ObjectId
-  query     String // O que o utilizador perguntou
-  answer    String // O que a Nonhande respondeu
-  agent     String? // Qual agente foi usado (tourist, general, etc.)
+  query     String
+  answer    String
+  agent     String?
   createdAt DateTime @default(now())
 
-  // Index para buscas rápidas por utilizador
+  // ✨ GARANTE QUE ESTA RELAÇÃO EXISTE:
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
+}
+
+model UserDocument {
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @db.ObjectId
+  name   String
+  url    String
+  type   String
+  size   Int
+
+  isProcessed Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 }
