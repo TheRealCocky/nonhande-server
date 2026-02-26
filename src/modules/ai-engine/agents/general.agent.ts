@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { BaseAgent } from './base.agent';
 import { GroqStrategy } from '../strategies/groq.strategy';
-import { AiResponse } from '../interfaces/ai-response.interface'; // Importar a interface
+import { AiResponse } from '../interfaces/ai-response.interface';
+import { GENERAL_AGENT_PROMPT } from '../prompt-builders/agent-general.prompt';
 
 @Injectable()
 export class GeneralAgent extends BaseAgent {
@@ -11,20 +12,19 @@ export class GeneralAgent extends BaseAgent {
     super();
   }
 
-  // Mudamos o retorno para Promise<AiResponse> e aceitamos o contexto opcional
   async execute(query: string, context?: any): Promise<AiResponse> {
-    const systemInstruction = `Tu és o Nonhande AI, um assistente virtual angolano. 
-    Se a pergunta for fora do âmbito de cultura ou turismo, responde de forma educada, 
-    informando que a tua especialidade é a cultura Nhaneka e Angola.`;
+    // ✨ O AJUSTE ESTÁ AQUI:
+    // Como GENERAL_AGENT_PROMPT é uma função, temos de a executar passando a query.
+    const systemInstruction = GENERAL_AGENT_PROMPT(query);
 
+    // Agora enviamos a instrução já montada com a query lá dentro
     const answer = await this.groq.getChatCompletion(query, systemInstruction);
 
-    // Retornamos o objeto completo conforme a interface exige
     return {
       answer,
       agentUsed: this.name,
-      confidence: 0.85, // Confiança base para o modelo geral
-      contextUsed: context
+      confidence: 0.98,
+      contextUsed: context,
     };
   }
 }

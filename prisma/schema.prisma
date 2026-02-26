@@ -208,3 +208,16 @@ model UserMemory {
 
   user User @relation(fields: [userId], references: [id])
 }
+
+// --- HISTÓRICO DE CONVERSA (MEMÓRIA EPISÓDICA) ---
+model ChatHistory {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  query     String // O que o utilizador perguntou
+  answer    String // O que a Nonhande respondeu
+  agent     String? // Qual agente foi usado (tourist, general, etc.)
+  createdAt DateTime @default(now())
+
+  // Index para buscas rápidas por utilizador
+  @@index([userId])
+}

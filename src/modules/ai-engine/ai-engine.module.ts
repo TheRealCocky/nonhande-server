@@ -9,10 +9,12 @@ import { GroqStrategy } from './strategies/groq.strategy';
 import { HuggingFaceStrategy } from './strategies/huggingface.strategy';
 import { DocumentAgent } from './agents/document.agent';
 import { TouristAgent } from './agents/tourist.agent';
-import { GeneralAgent } from './agents/general.agent'; // Adicionado
-import { ModelSelectorStrategy } from './strategies/model-selector.strategy'; // Adicionado
+import { GeneralAgent } from './agents/general.agent';
+import { ModelSelectorStrategy } from './strategies/model-selector.strategy';
 import { DocumentGeneratorService } from './services/DocumentGeneratorService';
 import { MemoryService } from './services/MemoryService';
+import { ChatCleanupService } from './services/ChatCleanupService'; // ✨ Importado
+
 @Module({
   controllers: [
     AiChatController,
@@ -24,12 +26,13 @@ import { MemoryService } from './services/MemoryService';
     AudioProcessingService,
     GroqStrategy,
     HuggingFaceStrategy,
-    ModelSelectorStrategy, // Essencial para a lógica de custo/performance
+    ModelSelectorStrategy,
     DocumentAgent,
     TouristAgent,
-    GeneralAgent, // Essencial para o fallback de conversas gerais
+    GeneralAgent,
     DocumentGeneratorService,
     MemoryService,
+    ChatCleanupService,
   ],
   exports: [AiOrchestratorService],
 })

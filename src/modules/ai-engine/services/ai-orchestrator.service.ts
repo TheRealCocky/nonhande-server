@@ -21,15 +21,16 @@ export class AiOrchestratorService {
     private readonly audioService: AudioProcessingService,
   ) {}
 
-  // 1. Adiciona o userId como parâmetro obrigatório
+  /**
+   * Processa a pergunta do utilizador, seleciona o agente adequado e gera a resposta.
+   */
   async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string) {
     const queryLower = userQuery.toLowerCase();
 
-    // 🧠 RECUPERAÇÃO DE MEMÓRIA: Antes de chamar qualquer agente
-    // O contexto traz factos como: "O utilizador gosta da Huíla" ou "Prefere resumos curtos"
+    // 🧠 RECUPERAÇÃO DE MEMÓRIA: Traz o contexto histórico do utilizador
     const userMemoryContext = await this.memoryService.getUserContext(userId);
 
-    // 🕵️ Detecção de intenção de documento
+    // 🕵️ Detecção de intenção de documento/geração
     const isDocRequest =
       queryLower.includes('gera') ||
       queryLower.includes('pdf') ||
@@ -38,25 +39,26 @@ export class AiOrchestratorService {
 
     let finalResult;
 
-    // 1. TURISMO
+    // 1. TURISMO (Foco no Sul e Locais)
     if (forcedAgent === 'tourist' || (!forcedAgent && this.checkIfTouristIntent(queryLower))) {
       const model = this.modelSelector.selectModel('tourist');
-      // Injetamos a memória no agente para ele saber com quem fala
-      finalResult = await this.touristAgent.execute(userQuery, userMemoryContext);
+
+      // O agente executa a lógica e o prompt dinâmico internamente
+      const result = await this.touristAgent.execute(userQuery, userMemoryContext);
 
       finalResult = {
-        ...finalResult,
+        text: result.answer,
+        agent: result.agentUsed,
         model,
-        text: finalResult.answer
+        confidence: result.confidence || 0.95,
       };
     }
-    // 2. DOCUMENTOS / DICIONÁRIO
+    // 2. DOCUMENTOS / DICIONÁRIO / CULTURA (RAG com LlamaIndex)
     else if (forcedAgent === 'document_expert' || isDocRequest || (!forcedAgent && this.checkIfCulturalIntent(queryLower))) {
       const model = this.modelSelector.selectModel('document');
       const vector = await this.hf.generateEmbedding(userQuery);
       const culturalContext = await this.llamaIndex.searchCulturalContext(vector);
 
-      // O DocumentAgent recebe o contexto do RAG + a memória do utilizador
       const result = await this.docAgent.execute(userQuery, culturalContext, userMemoryContext);
 
       finalResult = {
@@ -69,7 +71,7 @@ export class AiOrchestratorService {
         confidence: result.confidence
       };
     }
-    // 3. PADRÃO (FALLBACK)
+    // 3. PADRÃO (FALLBACK - Agent Geral)
     else {
       const model = this.modelSelector.selectModel('general');
       const result = await this.generalAgent.execute(userQuery, userMemoryContext);
@@ -83,21 +85,22 @@ export class AiOrchestratorService {
     }
 
     // 🧠 ATUALIZAÇÃO DE MEMÓRIA (Background Task)
-    // Analisa a interação atual para extrair novos factos sem bloquear a resposta
     this.memoryService.updateMemory(userId, userQuery, finalResult.text).catch(err =>
-      console.error('Erro ao atualizar memória da Nonhande IA:', err)
+      console.error('[Nonhande IA] Erro ao atualizar memória:', err)
     );
 
     return finalResult;
   }
 
+  /**
+   * Orquestra o fluxo de voz: Transcrição -> Inteligência -> Preparação para Fala
+   */
   async handleVoiceQuery(audioFile: Express.Multer.File, userId: string) {
     // 1. Transcrição (Ouvir)
-    // Usamos o buffer processado pelo seu AudioProcessingService
     const processedBuffer = await this.audioService.processAudioForTranscription(audioFile);
     let transcribedText = await this.hf.transcribeAudio(processedBuffer);
 
-    // 2. Camada de Normalização Fonética Nonhande (Mantém a tua lógica excelente)
+    // 2. Camada de Normalização Fonética (Lógica Angolana)
     const phoneticMap: Record<string, string> = {
       'duende': 'tuende', 'kowila': 'ko huila', 'er det': 'ekumbi',
       'kombi': 'ekumbi', 'conbi': 'ekumbi', 'tu em de': 'tuende'
@@ -109,24 +112,22 @@ export class AiOrchestratorService {
     });
 
     // 3. Inteligência com Memória (Pensar)
-    // Passamos o userId para o getSmartResponse buscar o histórico no MemoryService
     const result = await this.getSmartResponse(transcribedText, userId);
 
-    // 4. Síntese de Voz (Falar)
-    // Geramos o áudio da resposta da Nonhande IA
-    // O audioService deve converter o texto em fala e devolver a URL do Cloudinary
+    // 4. Preparação da Resposta de Voz (Falar)
+    // Retorna null pois o Frontend usará a Web Speech API com o result.text
     const audioResponseUrl = await this.audioService.textToSpeech(result.text);
 
     // 5. Atualizar Memória em Background
-    // Não usamos 'await' aqui para a resposta ser mais rápida para o utilizador
     this.memoryService.updateMemory(userId, transcribedText, result.text).catch(err =>
-      console.error('Erro ao gravar memória:', err)
+      console.error('[Nonhande IA] Erro ao gravar memória de voz:', err)
     );
 
     return {
-      transcription: transcribedText, // O que a IA ouviu
-      audioUrl: audioResponseUrl,      // O link para o Frontend tocar o som
-      ...result                        // Texto, agente usado, pdf (se houver), etc.
+      transcription: transcribedText,
+      audioUrl: audioResponseUrl, // Será null para Web Speech API no Frontend
+      text: result.text,          // O texto que será lido em voz alta
+      ...result                   // Resto dos dados (agente, modelo, context, etc.)
     };
   }
 
