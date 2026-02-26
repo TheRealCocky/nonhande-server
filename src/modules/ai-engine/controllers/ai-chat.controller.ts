@@ -1,38 +1,62 @@
-import { Controller, Post, Body, BadRequestException, UseGuards } from '@nestjs/common';
+// 1. Adicionámos Get e Param aos imports
+import {
+  Controller,
+  Post,
+  Get,
+  Param,
+  Body,
+  BadRequestException,
+} from '@nestjs/common';
 import { AiOrchestratorService } from '../services/ai-orchestrator.service';
+import { PrismaService } from '../../../prisma/prisma.service'; // ✨ Importa o Prisma
 
 @Controller('ai')
 export class AiChatController {
-  constructor(private readonly orchestrator: AiOrchestratorService) {}
+  constructor(
+    private readonly orchestrator: AiOrchestratorService,
+    private readonly prisma: PrismaService // ✨ Injeta o Prisma aqui!
+  ) {}
 
   /**
-   * 💬 Chat via Texto: O portal principal da Nonhande
-   * Recebe a mensagem, o ID do utilizador e, opcionalmente, o agente pretendido.
+   * 💬 Chat via Texto
    */
   @Post('chat')
   async chat(
     @Body() body: {
       message: string;
       userId: string;
-      agent?: string; // Opcional: 'tourist' | 'document_expert'
+      agent?: string;
     }
   ) {
     const { message, userId, agent } = body;
 
-    if (!message) {
-      throw new BadRequestException('Mestre, a mensagem não pode estar vazia.');
-    }
-
-    if (!userId) {
-      throw new BadRequestException('Identificação do utilizador (userId) é obrigatória para a memória.');
+    if (!message || !userId) {
+      throw new BadRequestException('Mestre, faltam dados (mensagem ou userId).');
     }
 
     try {
-      // Chamamos o orquestrador que agora já tem o sistema de memória embutido
       return await this.orchestrator.getSmartResponse(message, userId, agent);
     } catch (error) {
-      console.error('[AiChatController] Erro na resposta da IA:', error);
-      throw new BadRequestException('Lamentamos, Mestre. A Nonhande teve um soluço técnico.');
+      console.error('[AiChatController] Erro:', error);
+      throw new BadRequestException('A Nonhande teve um soluço técnico.');
+    }
+  }
+
+  /**
+   * 📜 Recupera o histórico de conversas do Mestre
+   */
+  @Get('history/:userId')
+  async getHistory(@Param('userId') userId: string) {
+    try {
+      // Procuramos no MongoDB as últimas 20 interações
+      return await this.prisma.chatHistory.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      });
+    } catch (error) {
+      console.error('[AiChatController] Erro ao buscar histórico:', error);
+      throw new BadRequestException('Não foi possível carregar o histórico.');
     }
   }
 }
