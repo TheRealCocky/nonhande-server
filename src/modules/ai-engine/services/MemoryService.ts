@@ -22,7 +22,7 @@ export class MemoryService {
         this.prisma.chatHistory.findMany({
           where: { userId },
           orderBy: { createdAt: 'desc' },
-          take: 5,
+          take: 3,
         }),
       ]);
 
