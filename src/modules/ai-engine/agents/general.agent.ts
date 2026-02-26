@@ -13,18 +13,16 @@ export class GeneralAgent extends BaseAgent {
   }
 
   async execute(query: string, context?: any): Promise<AiResponse> {
-    // ✨ O AJUSTE ESTÁ AQUI:
-    // Como GENERAL_AGENT_PROMPT é uma função, temos de a executar passando a query.
-    const systemInstruction = GENERAL_AGENT_PROMPT(query);
+    // ✨ PASSAMOS O CONTEXTO PARA O PROMPT BUILDER
+    const systemInstruction = GENERAL_AGENT_PROMPT(query, context);
 
-    // Agora enviamos a instrução já montada com a query lá dentro
     const answer = await this.groq.getChatCompletion(query, systemInstruction);
 
     return {
       answer,
       agentUsed: this.name,
       confidence: 0.98,
-      contextUsed: context,
+      contextUsed: context, // Aqui já estava bem, mas é só para o log
     };
   }
 }

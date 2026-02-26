@@ -13,20 +13,29 @@ export class TouristAgent extends BaseAgent {
   }
 
   // Mudamos para Promise<AiResponse> e adicionamos o context opcional para bater com o BaseAgent
-  async execute(query: string, context?: any): Promise<AiResponse> {
+  async execute(query: string, context?: string): Promise<AiResponse> {
+    // 1. O prompt continua a ser gerado com a query
     const prompt = TouristExpertPrompt(query);
 
-    // Mantemos a tua lógica de passar o conhecimento geral como contexto para o Groq
+    // 2. ✨ Tipagem correta e System Instruction
+    const systemInstruction = `
+      Tu és um Guia Turístico Especialista em Angola. 
+      CONTEXTO ANTERIOR COM O UTILIZADOR:
+      ${context || 'Início de conversa.'}
+      
+      Instrução Base: Conhecimento geral sobre o turismo em Angola.
+    `.trim();
+
     const answer = await this.groq.getChatCompletion(
       prompt,
-      'Conhecimento geral sobre o turismo em Angola'
+      systemInstruction
     );
 
     return {
       answer,
       agentUsed: this.name,
-      confidence: 0.90, // Confiança alta para turismo
-      contextUsed: context || 'Conhecimento geral sobre o turismo em Angola'
+      confidence: 0.90,
+      contextUsed: context // Agora o linter não chora
     };
   }
 }
