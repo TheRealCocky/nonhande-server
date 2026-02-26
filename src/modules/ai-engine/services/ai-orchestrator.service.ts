@@ -48,7 +48,7 @@ export class AiOrchestratorService {
 
       finalResult = {
         text: result.answer,
-        agent: result.agentUsed,
+        agent: result.agentUsed || 'tourist',
         model,
         confidence: result.confidence || 0.95,
       };
@@ -64,7 +64,7 @@ export class AiOrchestratorService {
       finalResult = {
         text: result.answer,
         sourceContext: culturalContext,
-        agent: result.agentUsed,
+        agent: result.agentUsed || 'document_expert',
         model,
         fileUrl: result.fileUrl,
         fileName: result.fileName,
@@ -78,14 +78,15 @@ export class AiOrchestratorService {
 
       finalResult = {
         text: result.answer,
-        agent: result.agentUsed,
+        agent: result.agentUsed || 'general',
         model,
         confidence: result.confidence
       };
     }
 
     // 🧠 ATUALIZAÇÃO DE MEMÓRIA (Background Task)
-    this.memoryService.updateMemory(userId, userQuery, finalResult.text).catch(err =>
+    // Passamos também o 'agent' para que o histórico no MongoDB fique tipado
+    this.memoryService.updateMemory(userId, userQuery, finalResult.text, finalResult.agent).catch(err =>
       console.error('[Nonhande IA] Erro ao atualizar memória:', err)
     );
 
@@ -112,22 +113,20 @@ export class AiOrchestratorService {
     });
 
     // 3. Inteligência com Memória (Pensar)
+    // Utilizamos o texto já corrigido foneticamente para a inteligência
     const result = await this.getSmartResponse(transcribedText, userId);
 
     // 4. Preparação da Resposta de Voz (Falar)
-    // Retorna null pois o Frontend usará a Web Speech API com o result.text
     const audioResponseUrl = await this.audioService.textToSpeech(result.text);
 
-    // 5. Atualizar Memória em Background
-    this.memoryService.updateMemory(userId, transcribedText, result.text).catch(err =>
-      console.error('[Nonhande IA] Erro ao gravar memória de voz:', err)
-    );
+    // Nota: O updateMemory já é chamado dentro do getSmartResponse acima,
+    // por isso não precisamos de duplicar a chamada aqui para não gravar duas vezes.
 
     return {
       transcription: transcribedText,
-      audioUrl: audioResponseUrl, // Será null para Web Speech API no Frontend
-      text: result.text,          // O texto que será lido em voz alta
-      ...result                   // Resto dos dados (agente, modelo, context, etc.)
+      audioUrl: audioResponseUrl,
+      text: result.text,
+      ...result
     };
   }
 

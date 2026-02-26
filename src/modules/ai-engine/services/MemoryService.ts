@@ -1,23 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { ModelSelectorStrategy } from '../strategies/model-selector.strategy';
 
 @Injectable()
 export class MemoryService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly modelSelector: ModelSelectorStrategy,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Validação interna para evitar Malformed ObjectID (Erro P2023)
-   */
   private isValidObjectId(id: string): boolean {
     return /^[0-9a-fA-F]{24}$/.test(id);
   }
 
   async getUserContext(userId: string): Promise<string> {
-    // 🛡️ Proteção contra IDs temporários (ex: 'utilizador_logado')
     if (!this.isValidObjectId(userId)) {
       return "Novo utilizador. Sê acolhedor e foca-te na cultura de Angola.";
     }
@@ -34,12 +26,12 @@ export class MemoryService {
 
       const conversation = recentHistory
         .reverse()
-        .map((h) => `User: ${h.query} | Nonhande: ${h.answer}`)
+        .map((h) => `User: ${h.query} | Nonhande (${h.agent || 'geral'}): ${h.answer}`)
         .join('\n');
 
       const facts = memory?.facts?.length
         ? `Factos sobre o mestre: ${memory.facts.join(', ')}.`
-        : "Novo utilizador.";
+        : "Sem factos registados.";
 
       if (!conversation && !memory) {
         return "Este é um novo utilizador. Sê acolhedor e foca-te na cultura de Angola.";
@@ -59,31 +51,36 @@ ${facts}
     }
   }
 
-  async updateMemory(userId: string, lastUserMsg: string, aiResponse: string) {
-    // 🛡️ Impede a criação de registros com IDs inválidos
+  // ✨ Adicionámos o parâmetro 'agent' para persistência correta
+  async updateMemory(userId: string, lastUserMsg: string, aiResponse: string, agent?: string) {
     if (!this.isValidObjectId(userId)) return;
 
     try {
+      // 1. Salva o Episódio (Histórico)
       await this.prisma.chatHistory.create({
         data: {
           userId,
           query: lastUserMsg,
           answer: aiResponse,
+          agent: agent || 'general', // ✨ Agora o banco sabe quem respondeu
         }
       });
 
+      // 2. Extração de Factos (Memória de Longo Prazo)
       const lowerMsg = lastUserMsg.toLowerCase();
       let newFact = '';
 
+      // Lógica de extração simples - Pode ser melhorada com IA depois
       if (lowerMsg.includes('gosto de') || lowerMsg.includes('prefiro') || lowerMsg.includes('sou de')) {
-        newFact = `Interesse: ${lastUserMsg}`;
+        newFact = lastUserMsg.trim();
       }
 
       if (newFact) {
         await this.prisma.userMemory.upsert({
           where: { userId },
           update: {
-            facts: { push: newFact }
+            facts: { push: newFact },
+            updatedAt: new Date(),
           },
           create: {
             userId,
