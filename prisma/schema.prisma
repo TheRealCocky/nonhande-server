@@ -41,7 +41,7 @@ model User {
 
   wordProgress   Progress[]
   lessonProgress UserLesson[]
-  calls          Call[]       @relation("UserCalls")
+  hostedCalls    Call[]       @relation("HostCalls")
 
   ChatHistory ChatHistory[]
 
@@ -194,15 +194,6 @@ model Progress {
   word       Word     @relation(fields: [wordId], references: [id])
 }
 
-model Call {
-  id        String    @id @default(auto()) @map("_id") @db.ObjectId
-  callerId  String    @db.ObjectId
-  calleeId  String    @db.ObjectId
-  startedAt DateTime  @default(now())
-  endedAt   DateTime?
-  user      User      @relation("UserCalls", fields: [callerId], references: [id])
-}
-
 // --- MEMÓRIA DE LONGO PRAZO (NONHANDE IA) ---
 model UserMemory {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
@@ -241,4 +232,25 @@ model UserDocument {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+}
+
+// --- LIVE & VIDEOCHAMADAS ---
+model Call {
+  id     String  @id @default(auto()) @map("_id") @db.ObjectId
+  roomId String  @unique // Ex: "aula-nhaneca-huila" ou UUID
+  title  String? // Nome da sala/aula
+
+  // Relação principal: O Professor/Anfitrião
+  hostId String @db.ObjectId
+  host   User   @relation("HostCalls", fields: [hostId], references: [id])
+
+  isActive  Boolean   @default(true)
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  // Mantemos como array de IDs para não complicar a performance no Render Free
+  participants String[] @db.ObjectId
+
+  createdAt DateTime @default(now())
+  // ❌ REMOVI as linhas duplicadas de "User" e "userId" que estavam aqui em baixo
 }
