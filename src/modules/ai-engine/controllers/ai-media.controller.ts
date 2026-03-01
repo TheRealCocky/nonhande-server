@@ -4,12 +4,13 @@ import {
   UseInterceptors,
   UploadedFile,
   Body,
-  BadRequestException,
+  BadRequestException, UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AiOrchestratorService } from '../services/ai-orchestrator.service';
-
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 @Controller('ai/media')
+@UseGuards(JwtAuthGuard)
 export class AiMediaController {
   constructor(private readonly orchestrator: AiOrchestratorService) {}
 

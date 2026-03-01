@@ -4,16 +4,20 @@ import { GamificationService } from './services/gamification.service';
 import { ProgressionService } from './services/progression.service';
 import { GamificationController } from './controllers/gamification.controller';
 import { ProgressionController } from './controllers/progression.controller';
+import { RankingController } from './controllers/ranking.controller';
+import { RankingService } from './services/ranking.service';
 
 @Module({
   imports: [PrismaModule], // Precisamos do Prisma para os services funcionarem
   controllers: [
     GamificationController,
-    ProgressionController
+    ProgressionController,
+    RankingController
   ],
   providers: [
     GamificationService,
-    ProgressionService
+    ProgressionService,
+    RankingService,
   ],
   exports: [GamificationService, ProgressionService], // Opcional: permite usar noutros módulos
 })

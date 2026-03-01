@@ -5,16 +5,17 @@ import {
   Get,
   Param,
   Body,
-  BadRequestException,
+  BadRequestException, UseGuards,
 } from '@nestjs/common';
 import { AiOrchestratorService } from '../services/ai-orchestrator.service';
-import { PrismaService } from '../../../prisma/prisma.service'; // ✨ Importa o Prisma
-
+import { PrismaService } from '../../../prisma/prisma.service';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 @Controller('ai')
+@UseGuards(JwtAuthGuard)
 export class AiChatController {
   constructor(
     private readonly orchestrator: AiOrchestratorService,
-    private readonly prisma: PrismaService // ✨ Injeta o Prisma aqui!
+    private readonly prisma: PrismaService,
   ) {}
 
   /**

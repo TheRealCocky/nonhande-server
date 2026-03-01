@@ -108,6 +108,4 @@ export class DictionaryController {
     }
     return word;
   }
-
-
 }
