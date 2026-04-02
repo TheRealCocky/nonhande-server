@@ -9,6 +9,7 @@ import { GamificationModule } from './modules/gamification/gamification.module';
 import { HealthController } from './health/health.controller';
 import { AiEngineModule } from './modules/ai-engine/ai-engine.module';
 import { ProfileModule } from './modules/profile/profile.module';
+import { PaymentModule } from './modules/payment/payment.module';
 @Module({
   imports: [
     // ✨ 2. Regista o Schedule para a limpeza de histórico funcionar
@@ -21,6 +22,7 @@ import { ProfileModule } from './modules/profile/profile.module';
     GamificationModule,
     AiEngineModule,
     ProfileModule,
+    PaymentModule,
   ],
   controllers: [AppController, HealthController],
 })

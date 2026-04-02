@@ -46,6 +46,15 @@ model User {
   ChatHistory ChatHistory[]
 
   UserDocument UserDocument[]
+
+  // Controle de Tokens IA (Nonhande)
+  aiTokens        Int       @default(5) // Começar com 5 (ou 100 como tinhas, mas 5 é melhor para o Free)
+  totalTokensUsed Int       @default(0)
+  lastTokenUpdate DateTime? @default(now()) // Alterado de Reset para Update (para ciclos de 12h)
+
+  // Relacionamentos novos
+  subscription Subscription?
+  transactions Transaction[]
 }
 
 enum Role {
@@ -239,6 +248,39 @@ model UserDocument {
   isProcessed Boolean @default(false)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model Subscription {
+  id     String     @id @default(auto()) @map("_id") @db.ObjectId
+  userId String     @unique @db.ObjectId
+  user   User       @relation(fields: [userId], references: [id])
+  plan   AccessType @default(FREE)
+
+  startDate DateTime  @default(now())
+  endDate   DateTime? // Se o mambo acabar, o acesso volta a FREE
+  isActive  Boolean   @default(true)
+
+  paymentMethod String? // "IBAN", "GATEWAY", "CASH"
+  externalId    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Transaction {
+  id         String     @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String     @db.ObjectId
+  user       User       @relation(fields: [userId], references: [id])
+  amount     Float
+  currency   String     @default("AOA")
+  receiptUrl String?
+  status     String     @default("PENDING")
+  planType   AccessType
+
+  // ESTE CAMPO ESTÁ A FALTAR OU COM NOME DIFERENTE:
+  verifiedAt DateTime?
 
   createdAt DateTime @default(now())
 }

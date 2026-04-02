@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { LlamaIndexService } from './llamaindex.service';
 import { HuggingFaceStrategy } from '../strategies/huggingface.strategy';
 import { DocumentAgent } from '../agents/document.agent';
@@ -7,10 +11,26 @@ import { GeneralAgent } from '../agents/general.agent';
 import { ModelSelectorStrategy } from '../strategies/model-selector.strategy';
 import { MemoryService } from './MemoryService';
 import { AudioProcessingService } from './audio-processing.service';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { User } from '@prisma/client';
+
+// ✅ Interface exportada para evitar erros no Controller
+export interface SmartResponse {
+  text: string;
+  agent: string;
+  model?: string;
+  confidence?: number;
+  sourceContext?: string;
+  fileUrl?: string;
+  fileName?: string;
+  isFallback?: boolean;
+  requiresUpgrade?: boolean;
+}
 
 @Injectable()
 export class AiOrchestratorService {
   constructor(
+    private readonly prisma: PrismaService,
     private readonly llamaIndex: LlamaIndexService,
     private readonly hf: HuggingFaceStrategy,
     private readonly docAgent: DocumentAgent,
@@ -21,33 +41,63 @@ export class AiOrchestratorService {
     private readonly audioService: AudioProcessingService,
   ) {}
 
+  private readonly FREE_TOKEN_REGEN_TIME = 12 * 60 * 60 * 1000;
+  private readonly MAX_FREE_TOKENS = 5;
+
   /**
-   * Processa a pergunta do utilizador com Fallback de Duas Contas Groq:
-   * 1. Groq Conta Principal (Chave 1)
-   * 2. Groq Conta Backup (Chave 2) -> Mesma inteligência, nova quota.
+   * 🔄 Sincroniza tokens (Garante que 'user' não seja nulo e evita duplicatas)
    */
-  async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string) {
+  private async syncFreeTokens(user: User): Promise<User> {
+    if (user.accessLevel !== 'FREE' || user.aiTokens >= this.MAX_FREE_TOKENS) {
+      return user;
+    }
+
+    const now = new Date();
+    const lastUpdate = user.lastTokenUpdate ?? user.createdAt;
+    const elapsed = now.getTime() - lastUpdate.getTime();
+    const tokensToAdd = Math.floor(elapsed / this.FREE_TOKEN_REGEN_TIME);
+
+    if (tokensToAdd > 0) {
+      const newTokens = Math.min(this.MAX_FREE_TOKENS, user.aiTokens + tokensToAdd);
+      return await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          aiTokens: newTokens,
+          lastTokenUpdate: new Date(lastUpdate.getTime() + (tokensToAdd * this.FREE_TOKEN_REGEN_TIME))
+        }
+      });
+    }
+    return user;
+  }
+
+  async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string): Promise<SmartResponse> {
+    const initialUser = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!initialUser) throw new NotFoundException('Mestre não encontrado.');
+
+    const user: User = await this.syncFreeTokens(initialUser);
+
+    if (user.accessLevel === 'FREE' && user.aiTokens <= 0) {
+      return {
+        text: "Os teus créditos da Nonhande IA acabaram. Eles renovam automaticamente a cada 12h, ou podes subir para Premium (5.000 Kz) para falar sem limites!",
+        agent: 'system',
+        requiresUpgrade: true
+      };
+    }
+
     const queryLower = userQuery.toLowerCase();
     const userMemoryContext = await this.memoryService.getUserContext(userId);
-
     const isDocRequest =
       queryLower.includes('gera') ||
       queryLower.includes('pdf') ||
       queryLower.includes('documento') ||
       queryLower.includes('faça');
 
-    let finalResult;
+    let finalResult: SmartResponse;
 
     try {
-      // --- 🚀 TENTATIVA 1: GROQ CONTA PRINCIPAL ---
       if (forcedAgent === 'tourist' || (!forcedAgent && this.checkIfTouristIntent(queryLower))) {
         const result = await this.touristAgent.execute(userQuery, userMemoryContext);
-        finalResult = {
-          text: result.answer,
-          agent: 'tourist',
-          model: 'llama-3.3-70b',
-          confidence: 0.95,
-        };
+        finalResult = { text: result.answer, agent: 'tourist', model: 'llama-3.3-70b', confidence: 0.95 };
       }
       else if (forcedAgent === 'document_expert' || isDocRequest || (!forcedAgent && this.checkIfCulturalIntent(queryLower))) {
         const vector = await this.hf.generateEmbedding(userQuery);
@@ -66,56 +116,53 @@ export class AiOrchestratorService {
       }
       else {
         const result = await this.generalAgent.execute(userQuery, userMemoryContext);
-        finalResult = {
-          text: result.answer,
-          agent: 'general',
-          model: 'llama-3.3-70b',
-          confidence: 0.90
-        };
+        finalResult = { text: result.answer, agent: 'general', model: 'llama-3.3-70b', confidence: 0.90 };
       }
 
-    } catch (error) {
-      // --- 🛡️ LÓGICA DE FALLBACK (PLANO B: GROQ SEGUNDA CONTA) ---
-      if (error.message.includes('429') || error.message.includes('rate_limit')) {
-        console.warn(`[Nonhande Fallback] Chave 1 esgotada. Ativando Segunda Conta Groq para ${userId}`);
+      if (user.accessLevel === 'FREE') {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            aiTokens: { decrement: 1 },
+            lastTokenUpdate: (user.aiTokens === 5) ? new Date() : (user.lastTokenUpdate ?? new Date()),
+            totalTokensUsed: { increment: 1 }
+          }
+        });
+      }
 
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : '';
+      if (errorMessage.includes('429') || errorMessage.includes('rate_limit')) {
         try {
-          // 🎯 O SEGREDO: Passamos o sinal 'true' para os agentes usarem a GROQ_API_KEY_BACKUP
-          // Nota: Precisas de ajustar os teus agents para aceitarem este 3º parâmetro
           const backupResult = await this.generalAgent.execute(userQuery, userMemoryContext, true);
+          finalResult = { text: backupResult.answer, agent: 'groq_account_backup', model: 'llama-3.3-70b', confidence: 0.90, isFallback: true };
 
-          finalResult = {
-            text: backupResult.answer,
-            agent: 'groq_account_backup',
-            model: 'llama-3.3-70b',
-            confidence: 0.90,
-            isFallback: true
-          };
+          if (user.accessLevel === 'FREE') {
+            await this.prisma.user.update({
+              where: { id: userId },
+              data: { aiTokens: { decrement: 1 }, totalTokensUsed: { increment: 1 } }
+            });
+          }
         } catch (backupError) {
-          // Se as duas contas da Groq falharem...
-          console.error(`[Nonhande Crítico] Ambas as contas Groq atingiram o limite.`);
-          throw new InternalServerErrorException('Estamos com muito tráfego agora. Tenta novamente em breve!');
+          throw new InternalServerErrorException('Muita carga no sistema. Tenta daqui a pouco!');
         }
       } else {
-        throw new InternalServerErrorException('Erro no Orquestrador: ' + error.message);
+        throw new InternalServerErrorException('Erro no Orquestrador: ' + errorMessage);
       }
     }
 
-    // 🧠 ATUALIZAÇÃO DE MEMÓRIA (Background)
     this.memoryService.updateMemory(userId, userQuery, finalResult.text, finalResult.agent).catch(err =>
-      console.error('[Nonhande Memory] Erro:', err)
+      console.error('[Memory] Erro:', err)
     );
 
     return finalResult;
   }
 
   /**
-   * Orquestra o fluxo de voz (Usa HF apenas para Whisper)
+   * Orquestra o fluxo de voz
    */
   async handleVoiceQuery(audioFile: Express.Multer.File, userId: string) {
     const processedBuffer = await this.audioService.processAudioForTranscription(audioFile);
-
-    // Whisper no HF continua firme e forte (não precisa de fallback de chat)
     let transcribedText = await this.hf.transcribeAudio(processedBuffer);
 
     const phoneticMap: Record<string, string> = {
@@ -134,7 +181,7 @@ export class AiOrchestratorService {
     return {
       transcription: transcribedText,
       audioUrl: audioResponseUrl,
-      text: result.text,
+
       ...result
     };
   }

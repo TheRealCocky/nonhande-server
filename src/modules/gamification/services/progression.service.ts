@@ -73,19 +73,26 @@ export class ProgressionService {
     const units = await this.prisma.unit.findMany({
       where: { levelId },
       orderBy: { order: 'asc' },
-      include: { lessons: { select: { id: true } } },
+      include: {
+        lessons: { select: { id: true } },
+        level: true // 👈 Adicionamos o include do level para saber a ordem
+      },
     });
 
-    const userLessons = await this.prisma.userLesson.findMany({
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { accessLevel: true } });
+    const completedLessonIds = new Set((await this.prisma.userLesson.findMany({
       where: { userId, completed: true },
       select: { lessonId: true },
-    });
+    })).map(l => l.lessonId));
 
-    const completedLessonIds = new Set(userLessons.map((l) => l.lessonId));
     let previousUnitCompleted = true;
 
     return units.map((unit) => {
-      const isUnlocked = previousUnitCompleted;
+      // 🛡️ REGRA DE OURO: Se Nível >= 3 e user é FREE, está bloqueado.
+      const isPremiumLevel = unit.level.order >= 3;
+      const hasAccess = !isPremiumLevel || (user?.accessLevel !== 'FREE');
+
+      const isUnlocked = previousUnitCompleted && hasAccess;
       const isCompleted = unit.lessons.length > 0 &&
         unit.lessons.every((lesson) => completedLessonIds.has(lesson.id));
 
@@ -97,6 +104,7 @@ export class ProgressionService {
         order: unit.order,
         isUnlocked,
         isCompleted,
+        isPremium: isPremiumLevel, // 👈 Útil para o frontend mostrar o cadeado/coroa
         totalLessons: unit.lessons.length,
       };
     });
@@ -108,15 +116,19 @@ export class ProgressionService {
   async handleLoss(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    // 🛡️ SE FOR PREMIUM, NÃO PERDE VIDA!
+    if (user.accessLevel !== 'FREE') {
+      return user;
+    }
+
     if (user.hearts <= 0) throw new BadRequestException('Sem corações!');
 
     const now = new Date();
-
     return await this.prisma.user.update({
       where: { id: userId },
       data: {
         hearts: { decrement: 1 },
-        // Se ele tinha 5 e agora tem 4, o cronómetro de regeneração TEM de começar AGORA
         lastHeartUpdate: user.hearts === user.maxHearts ? now : user.lastHeartUpdate,
       },
     });
