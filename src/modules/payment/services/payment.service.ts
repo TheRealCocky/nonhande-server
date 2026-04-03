@@ -1,4 +1,3 @@
-// src/modules/payment/services/payment.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -10,33 +9,39 @@ import { createClient } from '@supabase/supabase-js';
 
 @Injectable()
 export class PaymentService {
-  private supabase;
+  // Inicialização do cliente Supabase seguindo o padrão do seu DictionaryService
+  private supabase = createClient(
+    process.env.SUPABASE_URL || '',
+    process.env.SUPABASE_SECRET_KEY || '',
+  );
 
-  constructor(private prisma: PrismaService) {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SECRET_KEY;
+  // Busca o nome do bucket das variáveis de ambiente (ex: receipts ou o que estiver no .env)
+  private readonly bucketName = process.env.SUPABASE_BUCKET || 'receipts';
 
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Configuração do Supabase (URL ou Secret Key) não encontrada no .env');
-    }
+  constructor(private prisma: PrismaService) {}
 
-    this.supabase = createClient(supabaseUrl, supabaseKey);
-  }
-  private async uploadToSupabase(path: string, file: Express.Multer.File): Promise<string> {
-    const { data, error } = await this.supabase.storage
-      .from('receipts')
+  /**
+   * Upload segue a lógica de pastas: payments/{userId}/nome-arquivo
+   */
+  private async uploadToSupabase(file: Express.Multer.File, userId: string): Promise<string> {
+    const fileName = `${Date.now()}-${file.originalname.replace(/\s/g, '_')}`;
+    const path = `payments/${userId}/${fileName}`;
+
+    const { error } = await this.supabase.storage
+      .from(this.bucketName)
       .upload(path, file.buffer, {
         contentType: file.mimetype,
         upsert: true,
       });
 
-    if (error) throw new BadRequestException(`Erro no Supabase: ${error.message}`);
+    if (error) {
+      throw new BadRequestException(`Erro Storage (Pagamento): ${error.message}`);
+    }
 
-    const { data: publicUrl } = this.supabase.storage
-      .from('receipts')
-      .getPublicUrl(data.path);
-
-    return publicUrl.publicUrl;
+    // Retorna a URL pública exatamente como no DictionaryService
+    return this.supabase.storage
+      .from(this.bucketName)
+      .getPublicUrl(path).data.publicUrl;
   }
 
   private calculateAmount(plan: string, cycle: string): number {
@@ -49,10 +54,8 @@ export class PaymentService {
   async submit(dto: SubmitReceiptDto, file: Express.Multer.File) {
     if (!file) throw new BadRequestException('O comprovativo é obrigatório.');
 
-    const fileName = `${Date.now()}_${file.originalname}`;
-    const path = `payments/${dto.userId}/${fileName}`;
-
-    const receiptUrl = await this.uploadToSupabase(path, file);
+    // Faz o upload usando a função padronizada
+    const receiptUrl = await this.uploadToSupabase(file, dto.userId);
     const finalAmount = this.calculateAmount(dto.plan, dto.cycle);
 
     return this.prisma.transaction.create({
@@ -77,6 +80,7 @@ export class PaymentService {
     const startDate = new Date();
     const endDate = new Date();
 
+    // Lógica de cálculo de datas
     if (cycle === 'semestral') endDate.setMonth(startDate.getMonth() + 6);
     else if (cycle === 'yearly') endDate.setFullYear(startDate.getFullYear() + 1);
     else endDate.setMonth(startDate.getMonth() + 1);
@@ -88,7 +92,10 @@ export class PaymentService {
       }),
       this.prisma.user.update({
         where: { id: tx.userId },
-        data: { accessLevel: tx.planType, aiTokens: tx.planType === 'PREMIUM' ? 2000 : 50000 },
+        data: {
+          accessLevel: tx.planType,
+          aiTokens: tx.planType === 'PREMIUM' ? 2000 : 50000
+        },
       }),
       this.prisma.subscription.upsert({
         where: { userId: tx.userId },
@@ -97,7 +104,6 @@ export class PaymentService {
       })
     ]);
   }
-
 
   async getUserTransactions(userId: string) {
     return this.prisma.transaction.findMany({
