@@ -98,11 +98,11 @@ export class PaymentService {
     ]);
   }
 
-  // ✅ ESTE MÉTODO PRECISA ESTAR DENTRO DA CLASSE
+
   async getUserTransactions(userId: string) {
     return this.prisma.transaction.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
   }
-} // <--- Garante que esta é a última chaveta do ficheiro
+}
