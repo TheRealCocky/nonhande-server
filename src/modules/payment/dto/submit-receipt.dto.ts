@@ -1,5 +1,5 @@
 // src/modules/payment/dto/submit-receipt.dto.ts
-import { IsEnum, IsNotEmpty, IsString, IsUrl } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsString, IsOptional } from 'class-validator';
 import { AccessType } from '@prisma/client';
 
 export class SubmitReceiptDto {
@@ -12,10 +12,10 @@ export class SubmitReceiptDto {
   plan: AccessType;
 
   @IsNotEmpty()
-  @IsUrl()
-  receiptUrl: string;
-
-  @IsNotEmpty()
   @IsEnum(['monthly', 'semestral', 'yearly'])
-  cycle: 'monthly' | 'semestral' | 'yearly'; // 👈 Adiciona isto!
+  cycle: 'monthly' | 'semestral' | 'yearly';
+
+  @IsOptional()
+  @IsString()
+  receiptUrl?: string;
 }
