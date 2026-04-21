@@ -25,8 +25,9 @@ export class AnalyticsService {
     const totalAttempted = user.lessonProgress.length;
     const totalCompleted = user.lessonProgress.filter((lp) => lp.completed).length;
 
-    // Mapeamento para o DTO
+
     return {
+      id: user.id,
       name: user.name,
       xp: user.xp,
       streak: user.streak,
@@ -54,6 +55,7 @@ export class AnalyticsService {
 
     // 1. Mapear cada estudante para o formato StudentReportDto
     const topStudents: StudentReportDto[] = students.map((s) => ({
+      id: s.id,
       name: s.name,
       xp: s.xp,
       streak: s.streak,

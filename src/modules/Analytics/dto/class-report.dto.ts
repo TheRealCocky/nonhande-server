@@ -1,4 +1,5 @@
 export class StudentReportDto {
+  id: string;
   name: string;
   xp: number;
   streak: number;
