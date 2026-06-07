@@ -108,6 +108,14 @@ model Group {
   createdAt DateTime @default(now())
 }
 
+model ActivityLog {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  type      String   // "SEARCH_WORD", "CHAT_QUERY", "LESSON_COMPLETED"
+  entityId  String?  // Opcional: ID da palavra ou da lição
+  createdAt DateTime @default(now())
+}
+
 // --- ESTRUTURA DE GAMIFICAÇÃO (MODULO CORRIGIDO) ---
 
 model Level {
