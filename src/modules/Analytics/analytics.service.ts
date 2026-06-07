@@ -37,42 +37,51 @@ export class AnalyticsService {
   /**
    * ✅ Retorna as estatísticas globais da turma (Versão com ActivityLog)
    */
-  async calculateClassGlobalStats(groupId?: string): Promise<ClassGlobalStatsDto> {
-    const where: Prisma.UserWhereInput = { role: Role.STUDENT };
-    if (groupId) { where.groupId = groupId; }
+ async calculateClassGlobalStats(groupId?: string): Promise<ClassGlobalStatsDto> {
+  const where: Prisma.UserWhereInput = { role: Role.STUDENT };
+  if (groupId) { where.groupId = groupId; }
 
-    const students = await this.prisma.user.findMany({
-      where,
-      include: { lessonProgress: true },
-      orderBy: { xp: 'desc' },
-      take: 15,
-    });
+  const students = await this.prisma.user.findMany({
+    where,
+    include: { lessonProgress: true },
+    orderBy: { xp: 'desc' },
+    take: 15,
+  });
 
-    // Usamos Promise.all para processar as contagens de cada aluno de forma eficiente
-    const topStudents: StudentReportDto[] = await Promise.all(students.map(async (s) => {
-      const completedLessons = s.lessonProgress?.filter((p) => p.completed).length || 0;
-      const totalLessons = s.lessonProgress?.length || 0;
+  const studentIds = students.map(s => s.id);
 
-      // Conta os eventos específicos do log para este aluno
-      const vocabCount = await this.prisma.activityLog.count({ where: { userId: s.id, type: 'SEARCH_WORD' } });
-      const aiCount = await this.prisma.activityLog.count({ where: { userId: s.id, type: 'CHAT_QUERY' } });
-      
-      return {
-        id: s.id,
-        name: s.name,
-        xp: s.xp || 0,
-        streak: s.streak || 0,
-        successRate: totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0,
-        wordsMastered: vocabCount,
-        aiInteractions: aiCount,
-      };
-    }));
+  // Consulta ÚNICA para buscar todas as contagens de todos os alunos de uma vez
+  const logs = await this.prisma.activityLog.groupBy({
+    by: ['userId', 'type'],
+    where: { userId: { in: studentIds } },
+    _count: true,
+  });
+
+  // Mapeia os logs para acesso rápido (hash map)
+  const getCount = (userId: string, type: 'SEARCH_WORD' | 'CHAT_QUERY') => {
+    return logs.find(l => l.userId === userId && l.type === type)?._count || 0;
+  };
+
+  const topStudents: StudentReportDto[] = students.map((s) => {
+    const completedLessons = s.lessonProgress?.filter((p) => p.completed).length || 0;
+    const totalLessons = s.lessonProgress?.length || 0;
 
     return {
-      totalStudents: students.length,
-      averageXp: students.length > 0 ? students.reduce((acc, curr) => acc + curr.xp, 0) / students.length : 0,
-      mostDifficultLesson: 'Lição 3.2 - Verbos Complexos',
-      topStudents: topStudents,
+      id: s.id,
+      name: s.name,
+      xp: s.xp || 0,
+      streak: s.streak || 0,
+      successRate: totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0,
+      wordsMastered: getCount(s.id, 'SEARCH_WORD'),
+      aiInteractions: getCount(s.id, 'CHAT_QUERY'),
     };
-  }
+  });
+
+  return {
+    totalStudents: students.length,
+    averageXp: students.length > 0 ? students.reduce((acc, curr) => acc + curr.xp, 0) / students.length : 0,
+    mostDifficultLesson: 'Lição 3.2 - Verbos Complexos',
+    topStudents: topStudents,
+  };
+}
 }

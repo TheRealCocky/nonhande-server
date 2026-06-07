@@ -58,28 +58,39 @@ export class AiOrchestratorService {
     const tokensToAdd = Math.floor(elapsed / this.FREE_TOKEN_REGEN_TIME);
 
     if (tokensToAdd > 0) {
-      const newTokens = Math.min(this.MAX_FREE_TOKENS, user.aiTokens + tokensToAdd);
+      const newTokens = Math.min(
+        this.MAX_FREE_TOKENS,
+        user.aiTokens + tokensToAdd,
+      );
       return await this.prisma.user.update({
         where: { id: user.id },
         data: {
           aiTokens: newTokens,
-          lastTokenUpdate: new Date(lastUpdate.getTime() + (tokensToAdd * this.FREE_TOKEN_REGEN_TIME))
-        }
+          lastTokenUpdate: new Date(
+            lastUpdate.getTime() + tokensToAdd * this.FREE_TOKEN_REGEN_TIME,
+          ),
+        },
       });
     }
     return user;
   }
-async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string): Promise<SmartResponse> {
-    const initialUser = await this.prisma.user.findUnique({ where: { id: userId } });
+  async getSmartResponse(
+    userQuery: string,
+    userId: string,
+    forcedAgent?: string,
+  ): Promise<SmartResponse> {
+    const initialUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
     if (!initialUser) throw new NotFoundException('Mestre não encontrado.');
 
     const user: User = await this.syncFreeTokens(initialUser);
 
     if (user.accessLevel === 'FREE' && user.aiTokens <= 0) {
       return {
-        text: "Os teus créditos da Nonhande IA acabaram. Eles renovam automaticamente a cada 12h, ou podes subir para Premium (5.000 Kz) para falar sem limites!",
+        text: 'Os teus créditos da Nonhande IA acabaram. Eles renovam automaticamente a cada 12h, ou podes subir para Premium (5.000 Kz) para falar sem limites!',
         agent: 'system',
-        requiresUpgrade: true
+        requiresUpgrade: true,
       };
     }
 
@@ -94,14 +105,33 @@ async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string):
     let finalResult: SmartResponse;
 
     try {
-      if (forcedAgent === 'tourist' || (!forcedAgent && this.checkIfTouristIntent(queryLower))) {
-        const result = await this.touristAgent.execute(userQuery, userMemoryContext);
-        finalResult = { text: result.answer, agent: 'tourist', model: 'llama-3.3-70b', confidence: 0.95 };
-      }
-      else if (forcedAgent === 'document_expert' || isDocRequest || (!forcedAgent && this.checkIfCulturalIntent(queryLower))) {
+      if (
+        forcedAgent === 'tourist' ||
+        (!forcedAgent && this.checkIfTouristIntent(queryLower))
+      ) {
+        const result = await this.touristAgent.execute(
+          userQuery,
+          userMemoryContext,
+        );
+        finalResult = {
+          text: result.answer,
+          agent: 'tourist',
+          model: 'llama-3.3-70b',
+          confidence: 0.95,
+        };
+      } else if (
+        forcedAgent === 'document_expert' ||
+        isDocRequest ||
+        (!forcedAgent && this.checkIfCulturalIntent(queryLower))
+      ) {
         const vector = await this.hf.generateEmbedding(userQuery);
-        const culturalContext = await this.llamaIndex.searchCulturalContext(vector);
-        const result = await this.docAgent.execute(userQuery, culturalContext, userMemoryContext);
+        const culturalContext =
+          await this.llamaIndex.searchCulturalContext(vector);
+        const result = await this.docAgent.execute(
+          userQuery,
+          culturalContext,
+          userMemoryContext,
+        );
 
         finalResult = {
           text: result.answer,
@@ -110,60 +140,90 @@ async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string):
           model: 'llama-3.3-70b',
           fileUrl: result.fileUrl,
           fileName: result.fileName,
-          confidence: result.confidence
+          confidence: result.confidence,
+        };
+      } else {
+        const result = await this.generalAgent.execute(
+          userQuery,
+          userMemoryContext,
+        );
+        finalResult = {
+          text: result.answer,
+          agent: 'general',
+          model: 'llama-3.3-70b',
+          confidence: 0.9,
         };
       }
-      else {
-        const result = await this.generalAgent.execute(userQuery, userMemoryContext);
-        finalResult = { text: result.answer, agent: 'general', model: 'llama-3.3-70b', confidence: 0.90 };
-      }
 
-      // Registo de atividade (Sucesso Principal)
+      // Registo de log (Todos)
       await this.prisma.activityLog.create({
-        data: { userId, type: 'CHAT_QUERY' }
+        data: { userId, type: 'CHAT_QUERY' },
       });
 
-      if (user.accessLevel === 'FREE') {
-        await this.prisma.user.update({
-          where: { id: userId },
-          data: {
-            aiTokens: { decrement: 1 },
-            lastTokenUpdate: (user.aiTokens === 5) ? new Date() : (user.lastTokenUpdate ?? new Date()),
-            totalTokensUsed: { increment: 1 },
-            aiInteractions: { increment: 1 }
-          }
-        });
-      }
-
+      // Atualização de métricas (Todos)
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          totalTokensUsed: { increment: 1 },
+          aiInteractions: { increment: 1 },
+          // Atualização de tokens (Apenas FREE)
+          ...(user.accessLevel === 'FREE'
+            ? {
+                aiTokens: { decrement: 1 },
+                lastTokenUpdate:
+                  user.aiTokens === 5
+                    ? new Date()
+                    : (user.lastTokenUpdate ?? new Date()),
+              }
+            : {}),
+        },
+      });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : '';
       if (errorMessage.includes('429') || errorMessage.includes('rate_limit')) {
         try {
-          const backupResult = await this.generalAgent.execute(userQuery, userMemoryContext, true);
-          finalResult = { text: backupResult.answer, agent: 'groq_account_backup', model: 'llama-3.3-70b', confidence: 0.90, isFallback: true };
+          const backupResult = await this.generalAgent.execute(
+            userQuery,
+            userMemoryContext,
+            true,
+          );
+          finalResult = {
+            text: backupResult.answer,
+            agent: 'groq_account_backup',
+            model: 'llama-3.3-70b',
+            confidence: 0.9,
+            isFallback: true,
+          };
 
-          // Registo de atividade (Fallback/Backup)
           await this.prisma.activityLog.create({
-            data: { userId, type: 'CHAT_QUERY' }
+            data: { userId, type: 'CHAT_QUERY' },
           });
 
-          if (user.accessLevel === 'FREE') {
-            await this.prisma.user.update({
-              where: { id: userId },
-              data: { aiTokens: { decrement: 1 }, totalTokensUsed: { increment: 1 }, aiInteractions: { increment: 1} }
-            });
-          }
+          await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+              totalTokensUsed: { increment: 1 },
+              aiInteractions: { increment: 1 },
+              ...(user.accessLevel === 'FREE'
+                ? { aiTokens: { decrement: 1 } }
+                : {}),
+            },
+          });
         } catch (backupError) {
-          throw new InternalServerErrorException('Muita carga no sistema. Tenta daqui a pouco!');
+          throw new InternalServerErrorException(
+            'Muita carga no sistema. Tenta daqui a pouco!',
+          );
         }
       } else {
-        throw new InternalServerErrorException('Erro no Orquestrador: ' + errorMessage);
+        throw new InternalServerErrorException(
+          'Erro no Orquestrador: ' + errorMessage,
+        );
       }
     }
 
-    this.memoryService.updateMemory(userId, userQuery, finalResult.text, finalResult.agent).catch(err =>
-      console.error('[Memory] Erro:', err)
-    );
+    this.memoryService
+      .updateMemory(userId, userQuery, finalResult.text, finalResult.agent)
+      .catch((err) => console.error('[Memory] Erro:', err));
 
     return finalResult;
   }
@@ -171,12 +231,17 @@ async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string):
    * Orquestra o fluxo de voz
    */
   async handleVoiceQuery(audioFile: Express.Multer.File, userId: string) {
-    const processedBuffer = await this.audioService.processAudioForTranscription(audioFile);
+    const processedBuffer =
+      await this.audioService.processAudioForTranscription(audioFile);
     let transcribedText = await this.hf.transcribeAudio(processedBuffer);
 
     const phoneticMap: Record<string, string> = {
-      'duende': 'tuende', 'kowila': 'ko huila', 'er det': 'ekumbi',
-      'kombi': 'ekumbi', 'conbi': 'ekumbi', 'tu em de': 'tuende'
+      duende: 'tuende',
+      kowila: 'ko huila',
+      'er det': 'ekumbi',
+      kombi: 'ekumbi',
+      conbi: 'ekumbi',
+      'tu em de': 'tuende',
     };
 
     Object.keys(phoneticMap).forEach((term) => {
@@ -191,17 +256,38 @@ async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string):
       transcription: transcribedText,
       audioUrl: audioResponseUrl,
 
-      ...result
+      ...result,
     };
   }
 
   private checkIfTouristIntent(query: string): boolean {
-    const touristKeywords = ['visitar', 'onde fica', 'turismo', 'província', 'huíla', 'hotel', 'monumento', 'namibe', 'benguela', 'serra da leba'];
-    return touristKeywords.some(keyword => query.includes(keyword));
+    const touristKeywords = [
+      'visitar',
+      'onde fica',
+      'turismo',
+      'província',
+      'huíla',
+      'hotel',
+      'monumento',
+      'namibe',
+      'benguela',
+      'serra da leba',
+    ];
+    return touristKeywords.some((keyword) => query.includes(keyword));
   }
 
   private checkIfCulturalIntent(query: string): boolean {
-    const cultureKeywords = ['como se diz', 'tradução', 'nhaneka', 'humbi', 'significa', 'dicionário', 'cultura', 'tradição', 'vátua'];
-    return cultureKeywords.some(keyword => query.includes(keyword));
+    const cultureKeywords = [
+      'como se diz',
+      'tradução',
+      'nhaneka',
+      'humbi',
+      'significa',
+      'dicionário',
+      'cultura',
+      'tradição',
+      'vátua',
+    ];
+    return cultureKeywords.some((keyword) => query.includes(keyword));
   }
 }
