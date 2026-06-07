@@ -41,25 +41,32 @@ export class AnalyticsService {
     const where: Prisma.UserWhereInput = { role: Role.STUDENT };
     if (groupId) { where.groupId = groupId; }
 
-    // 1. Busca todos os estudantes (ou um número maior)
+    // 1. Busca os estudantes
     const students = await this.prisma.user.findMany({
       where,
       include: { lessonProgress: true },
     });
 
-    // 2. Busca logs de TODOS
+    // CRÍTICO: Extrair os IDs para filtrar apenas os logs destes alunos
+    const studentIds = students.map(s => s.id);
+
+    // 2. Busca logs APENAS destes estudantes (Performance e Precisão)
     const logs = await this.prisma.activityLog.groupBy({
       by: ['userId', 'type'],
-      where: { type: { in: ['SEARCH_WORD', 'CHAT_QUERY'] } },
+      where: { 
+        userId: { in: studentIds }, // Filtro obrigatório aqui
+        type: { in: ['SEARCH_WORD', 'CHAT_QUERY'] } 
+      },
       _count: true,
     });
 
-    // 3. Helper
+    // 3. Helper de busca rápida
     const getCount = (userId: string, type: 'SEARCH_WORD' | 'CHAT_QUERY') => {
+      // Nota: Verifica se userId e type correspondem ao objeto do groupBy
       return logs.find(l => l.userId === userId && l.type === type)?._count || 0;
     };
 
-    // 4. Mapeia e já calcula o score de atividade
+    // 4. Mapeia e calcula pontuação
     let processedStudents = students.map((s) => {
       const aiCount = getCount(s.id, 'CHAT_QUERY');
       const vocabCount = getCount(s.id, 'SEARCH_WORD');
@@ -74,15 +81,14 @@ export class AnalyticsService {
         successRate: totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0,
         wordsMastered: vocabCount,
         aiInteractions: aiCount,
-        // Adicionamos um score de atividade para ordenar
         activityScore: aiCount + vocabCount 
       };
     });
 
-    // 5. Ordena pelo que você quiser (Ex: Quem mais interage com a IA)
+    // 5. Ordena pelo activityScore
     processedStudents.sort((a, b) => b.activityScore - a.activityScore);
 
-    // 6. Pega apenas os 15 mais ativos agora
+    // 6. Pega apenas os 15 melhores
     const topStudents = processedStudents.slice(0, 15);
 
     return {
