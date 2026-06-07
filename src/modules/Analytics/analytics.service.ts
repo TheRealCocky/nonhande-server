@@ -61,10 +61,13 @@ export class AnalyticsService {
     });
 
     // 3. Helper de busca rápida
-    const getCount = (userId: string, type: 'SEARCH_WORD' | 'CHAT_QUERY') => {
-      // Nota: Verifica se userId e type correspondem ao objeto do groupBy
-      return logs.find(l => l.userId === userId && l.type === type)?._count || 0;
-    };
+  const getCount = (userId: string, type: 'SEARCH_WORD' | 'CHAT_QUERY') => {
+  return logs.find(l => {
+    // Converte o ID do log para string para comparar com o ID do aluno
+    const logUserId = l.userId.toString(); 
+    return logUserId === userId && l.type === type;
+  })?._count || 0;
+};
 
     // 4. Mapeia e calcula pontuação
     let processedStudents = students.map((s) => {
