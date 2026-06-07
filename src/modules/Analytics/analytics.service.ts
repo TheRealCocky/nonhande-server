@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ClassGlobalStatsDto, StudentReportDto } from './dto/class-report.dto';
 
@@ -8,7 +9,6 @@ export class AnalyticsService {
 
   /**
    * ✅ Retorna a performance detalhada de um estudante específico
-   * Tipado com StudentReportDto
    */
   async getStudentPerformance(userId: string): Promise<StudentReportDto> {
     const user = await this.prisma.user.findUnique({
@@ -25,55 +25,55 @@ export class AnalyticsService {
     const totalAttempted = user.lessonProgress.length;
     const totalCompleted = user.lessonProgress.filter((lp) => lp.completed).length;
 
-
     return {
       id: user.id,
       name: user.name,
       xp: user.xp,
       streak: user.streak,
       successRate: totalAttempted > 0 ? (totalCompleted / totalAttempted) * 100 : 0,
-      wordsMastered: user.wordProgress.filter(wp => wp.mastered).length,
+      wordsMastered: user.wordProgress.filter((wp) => wp.mastered).length,
       aiInteractions: user.ChatHistory.length,
     };
   }
 
   /**
-   * ✅ Retorna as estatísticas globais da turma de 15 alunos
-   * Tipado com ClassGlobalStatsDto
-   */
- /**
-   * ✅ Retorna as estatísticas, com filtro opcional de Grupo
+   * ✅ Retorna as estatísticas globais da turma, com filtro opcional de Grupo
    */
   async calculateClassGlobalStats(groupId?: string): Promise<ClassGlobalStatsDto> {
-    // 1. Montar a query dinâmica
-    const whereClause: any = { role: 'STUDENT' };
+    // Definindo o filtro com o tipo correto do Prisma
+    const where: Prisma.UserWhereInput = { role: Role.STUDENT };
+    
     if (groupId) {
-      whereClause.groupId = groupId; // Apenas alunos deste grupo
+      where.groupId = groupId;
     }
 
     const students = await this.prisma.user.findMany({
-      where: whereClause,
+      where,
       include: {
         lessonProgress: true,
         wordProgress: true,
         ChatHistory: true,
       },
       orderBy: { xp: 'desc' },
-      take: 15, 
+      take: 15,
     });
 
-    // 2. Mapeamento dos estudantes (mantém a lógica anterior)
-    const topStudents: StudentReportDto[] = students.map((s) => ({
-      id: s.id,
-      name: s.name,
-      xp: s.xp,
-      streak: s.streak,
-      successRate: s.lessonProgress.length > 0
-        ? (s.lessonProgress.filter(p => p.completed).length / s.lessonProgress.length) * 100
-        : 0,
-      wordsMastered: s.wordProgress.filter(wp => wp.mastered).length,
-      aiInteractions: s.ChatHistory.length,
-    }));
+    const topStudents: StudentReportDto[] = students.map((s) => {
+      const completedLessons = s.lessonProgress.filter((p) => p.completed).length;
+      const successRate = s.lessonProgress.length > 0 
+        ? (completedLessons / s.lessonProgress.length) * 100 
+        : 0;
+
+      return {
+        id: s.id,
+        name: s.name,
+        xp: s.xp,
+        streak: s.streak,
+        successRate: successRate,
+        wordsMastered: s.wordProgress.filter((wp) => wp.mastered).length,
+        aiInteractions: s.ChatHistory.length,
+      };
+    });
 
     const totalXp = students.reduce((acc, curr) => acc + curr.xp, 0);
     const averageXp = students.length > 0 ? totalXp / students.length : 0;
@@ -81,7 +81,7 @@ export class AnalyticsService {
     return {
       totalStudents: students.length,
       averageXp: averageXp,
-      mostDifficultLesson: 'Lição 3.2 - Verbos Complexos', 
+      mostDifficultLesson: 'Lição 3.2 - Verbos Complexos',
       topStudents: topStudents,
     };
   }
