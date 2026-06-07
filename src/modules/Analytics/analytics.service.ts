@@ -38,36 +38,31 @@ export class AnalyticsService {
    * ✅ Retorna as estatísticas globais da turma (Performance Otimizada)
    */
   async calculateClassGlobalStats(groupId?: string): Promise<ClassGlobalStatsDto> {
-    // 1. Busca os estudantes
     const where: Prisma.UserWhereInput = { role: Role.STUDENT };
     if (groupId) { where.groupId = groupId; }
 
+    // 1. Busca todos os estudantes (ou um número maior)
     const students = await this.prisma.user.findMany({
       where,
       include: { lessonProgress: true },
-      orderBy: { xp: 'desc' },
-      take: 15, // Limitado aos 15 melhores para o dashboard
     });
 
-    const studentIds = students.map(s => s.id);
-
-    // 2. Consulta ÚNICA de logs (Evita o problema N+1)
+    // 2. Busca logs de TODOS
     const logs = await this.prisma.activityLog.groupBy({
       by: ['userId', 'type'],
-      where: { 
-        userId: { in: studentIds },
-        type: { in: ['SEARCH_WORD', 'CHAT_QUERY'] }
-      },
+      where: { type: { in: ['SEARCH_WORD', 'CHAT_QUERY'] } },
       _count: true,
     });
 
-    // 3. Helper para extrair dados dos logs agrupados (Hash Map eficiente)
+    // 3. Helper
     const getCount = (userId: string, type: 'SEARCH_WORD' | 'CHAT_QUERY') => {
       return logs.find(l => l.userId === userId && l.type === type)?._count || 0;
     };
 
-    // 4. Monta o DTO final
-    const topStudents: StudentReportDto[] = students.map((s) => {
+    // 4. Mapeia e já calcula o score de atividade
+    let processedStudents = students.map((s) => {
+      const aiCount = getCount(s.id, 'CHAT_QUERY');
+      const vocabCount = getCount(s.id, 'SEARCH_WORD');
       const completedLessons = s.lessonProgress?.filter((p) => p.completed).length || 0;
       const totalLessons = s.lessonProgress?.length || 0;
 
@@ -77,10 +72,18 @@ export class AnalyticsService {
         xp: s.xp || 0,
         streak: s.streak || 0,
         successRate: totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0,
-        wordsMastered: getCount(s.id, 'SEARCH_WORD'),
-        aiInteractions: getCount(s.id, 'CHAT_QUERY'),
+        wordsMastered: vocabCount,
+        aiInteractions: aiCount,
+        // Adicionamos um score de atividade para ordenar
+        activityScore: aiCount + vocabCount 
       };
     });
+
+    // 5. Ordena pelo que você quiser (Ex: Quem mais interage com a IA)
+    processedStudents.sort((a, b) => b.activityScore - a.activityScore);
+
+    // 6. Pega apenas os 15 mais ativos agora
+    const topStudents = processedStudents.slice(0, 15);
 
     return {
       totalStudents: students.length,
