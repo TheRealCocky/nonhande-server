@@ -41,19 +41,28 @@ export class AnalyticsService {
    * ✅ Retorna as estatísticas globais da turma de 15 alunos
    * Tipado com ClassGlobalStatsDto
    */
-  async calculateClassGlobalStats(): Promise<ClassGlobalStatsDto> {
+ /**
+   * ✅ Retorna as estatísticas, com filtro opcional de Grupo
+   */
+  async calculateClassGlobalStats(groupId?: string): Promise<ClassGlobalStatsDto> {
+    // 1. Montar a query dinâmica
+    const whereClause: any = { role: 'STUDENT' };
+    if (groupId) {
+      whereClause.groupId = groupId; // Apenas alunos deste grupo
+    }
+
     const students = await this.prisma.user.findMany({
-      where: { role: 'STUDENT' },
+      where: whereClause,
       include: {
         lessonProgress: true,
         wordProgress: true,
         ChatHistory: true,
       },
       orderBy: { xp: 'desc' },
-      take: 15, // O teu grupo de teste
+      take: 15, 
     });
 
-    // 1. Mapear cada estudante para o formato StudentReportDto
+    // 2. Mapeamento dos estudantes (mantém a lógica anterior)
     const topStudents: StudentReportDto[] = students.map((s) => ({
       id: s.id,
       name: s.name,
@@ -66,14 +75,13 @@ export class AnalyticsService {
       aiInteractions: s.ChatHistory.length,
     }));
 
-    // 2. Calcular Médias Globais (KPIs para a Monografia)
     const totalXp = students.reduce((acc, curr) => acc + curr.xp, 0);
     const averageXp = students.length > 0 ? totalXp / students.length : 0;
 
     return {
       totalStudents: students.length,
       averageXp: averageXp,
-      mostDifficultLesson: 'Lição 3.2 - Verbos Complexos', // Poderias calcular isto dinamicamente
+      mostDifficultLesson: 'Lição 3.2 - Verbos Complexos', 
       topStudents: topStudents,
     };
   }

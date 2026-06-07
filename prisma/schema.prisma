@@ -55,6 +55,11 @@ model User {
   // Relacionamentos novos
   subscription Subscription?
   transactions Transaction[]
+
+  aiInteractions  Int     @default(0)
+  //ANALITICO
+  groupId   String?  @db.ObjectId
+  group     Group?   @relation(fields: [groupId], references: [id])
 }
 
 enum Role {
@@ -82,6 +87,7 @@ model Word {
   synonyms        String[]
   examples        Example[]
   wordProgress    Progress[]
+  queryCount      Int       @default(0)
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 }
@@ -93,6 +99,13 @@ model Example {
   audioUrl    String?
   wordId      String  @db.ObjectId
   word        Word    @relation(fields: [wordId], references: [id], onDelete: Cascade)
+}
+// --- ANALITICO FILTRAR POR GRUPO---
+model Group {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   // Ex: "Turma A - Lubango", "Nível Iniciante"
+  students  User[]   // Relação inversa: um grupo tem vários estudantes
+  createdAt DateTime @default(now())
 }
 
 // --- ESTRUTURA DE GAMIFICAÇÃO (MODULO CORRIGIDO) ---

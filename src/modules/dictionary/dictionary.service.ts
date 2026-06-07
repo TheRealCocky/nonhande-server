@@ -262,8 +262,12 @@ export class DictionaryService {
       });
     }
 
-    // 5. Salva no cache se encontrou alguma coisa
+    // 5. Salva no cache se encontrou alguma coisa e actualiza cada palavra consultada para ter um contador de consultas
     if (word) {
+      await this.prisma.word.update({
+        where: { id: word.id },
+        data: { queryCount: {increment: 1}}
+      });
       await this.cacheManager.set(cacheKey, word);
     }
 

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
@@ -9,8 +9,8 @@ export class AnalyticsController {
 
   @Get('class-summary')
   @Roles(Role.ADMIN, Role.TEACHER)
-  async getClassSummary() {
-    return this.analyticsService.calculateClassGlobalStats();
+  async getClassSummary(@Query('groupId') groupId?: string) { 
+    return this.analyticsService.calculateClassGlobalStats(groupId);
   }
 
   @Get('student/:id')

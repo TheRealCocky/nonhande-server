@@ -69,7 +69,7 @@ export class AiOrchestratorService {
     }
     return user;
   }
-
+//resposta inteligencia artificial
   async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string): Promise<SmartResponse> {
     const initialUser = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!initialUser) throw new NotFoundException('Mestre não encontrado.');
@@ -125,7 +125,8 @@ export class AiOrchestratorService {
           data: {
             aiTokens: { decrement: 1 },
             lastTokenUpdate: (user.aiTokens === 5) ? new Date() : (user.lastTokenUpdate ?? new Date()),
-            totalTokensUsed: { increment: 1 }
+            totalTokensUsed: { increment: 1 },
+            aiInteractions: { increment: 1 }
           }
         });
       }
@@ -140,7 +141,7 @@ export class AiOrchestratorService {
           if (user.accessLevel === 'FREE') {
             await this.prisma.user.update({
               where: { id: userId },
-              data: { aiTokens: { decrement: 1 }, totalTokensUsed: { increment: 1 } }
+              data: { aiTokens: { decrement: 1 }, totalTokensUsed: { increment: 1 }, aiInteractions: { increment: 1} }
             });
           }
         } catch (backupError) {
