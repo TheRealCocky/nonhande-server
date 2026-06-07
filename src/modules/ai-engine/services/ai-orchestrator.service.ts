@@ -74,159 +74,168 @@ export class AiOrchestratorService {
     }
     return user;
   }
-  async getSmartResponse(
-    userQuery: string,
-    userId: string,
-    forcedAgent?: string,
-  ): Promise<SmartResponse> {
-    const initialUser = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
-    if (!initialUser) throw new NotFoundException('Mestre não encontrado.');
+ async getSmartResponse(
+  userQuery: string,
+  userId: string,
+  forcedAgent?: string,
+): Promise<SmartResponse> {
+  const initialUser = await this.prisma.user.findUnique({
+    where: { id: userId },
+  });
+  if (!initialUser) throw new NotFoundException('Mestre não encontrado.');
 
-    const user: User = await this.syncFreeTokens(initialUser);
+  const user: User = await this.syncFreeTokens(initialUser);
 
-    if (user.accessLevel === 'FREE' && user.aiTokens <= 0) {
-      return {
-        text: 'Os teus créditos da Nonhande IA acabaram. Eles renovam automaticamente a cada 12h, ou podes subir para Premium (5.000 Kz) para falar sem limites!',
-        agent: 'system',
-        requiresUpgrade: true,
+  if (user.accessLevel === 'FREE' && user.aiTokens <= 0) {
+    return {
+      text: 'Os teus créditos da Nonhande IA acabaram. Eles renovam automaticamente a cada 12h, ou podes subir para Premium (5.000 Kz) para falar sem limites!',
+      agent: 'system',
+      requiresUpgrade: true,
+    };
+  }
+
+  const queryLower = userQuery.toLowerCase();
+  const userMemoryContext = await this.memoryService.getUserContext(userId);
+  const isDocRequest =
+    queryLower.includes('gera') ||
+    queryLower.includes('pdf') ||
+    queryLower.includes('documento') ||
+    queryLower.includes('faça');
+
+  let finalResult: SmartResponse;
+
+  try {
+    if (
+      forcedAgent === 'tourist' ||
+      (!forcedAgent && this.checkIfTouristIntent(queryLower))
+    ) {
+      const result = await this.touristAgent.execute(
+        userQuery,
+        userMemoryContext,
+      );
+      finalResult = {
+        text: result.answer,
+        agent: 'tourist',
+        model: 'llama-3.3-70b',
+        confidence: 0.95,
+      };
+    } else if (
+      forcedAgent === 'document_expert' ||
+      isDocRequest ||
+      (!forcedAgent && this.checkIfCulturalIntent(queryLower))
+    ) {
+      const vector = await this.hf.generateEmbedding(userQuery);
+      const culturalContext =
+        await this.llamaIndex.searchCulturalContext(vector);
+      const result = await this.docAgent.execute(
+        userQuery,
+        culturalContext,
+        userMemoryContext,
+      );
+
+      finalResult = {
+        text: result.answer,
+        sourceContext: culturalContext,
+        agent: 'document_expert',
+        model: 'llama-3.3-70b',
+        fileUrl: result.fileUrl,
+        fileName: result.fileName,
+        confidence: result.confidence,
+      };
+    } else {
+      const result = await this.generalAgent.execute(
+        userQuery,
+        userMemoryContext,
+      );
+      finalResult = {
+        text: result.answer,
+        agent: 'general',
+        model: 'llama-3.3-70b',
+        confidence: 0.9,
       };
     }
 
-    const queryLower = userQuery.toLowerCase();
-    const userMemoryContext = await this.memoryService.getUserContext(userId);
-    const isDocRequest =
-      queryLower.includes('gera') ||
-      queryLower.includes('pdf') ||
-      queryLower.includes('documento') ||
-      queryLower.includes('faça');
+    
+    
+    // Registo de log (Todos)
+    await this.prisma.activityLog.create({
+      data: { userId, type: 'CHAT_QUERY' },
+    });
 
-    let finalResult: SmartResponse;
+   
 
-    try {
-      if (
-        forcedAgent === 'tourist' ||
-        (!forcedAgent && this.checkIfTouristIntent(queryLower))
-      ) {
-        const result = await this.touristAgent.execute(
+    // Atualização de métricas (Todos)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        totalTokensUsed: { increment: 1 },
+        aiInteractions: { increment: 1 },
+        // Atualização de tokens (Apenas FREE)
+        ...(user.accessLevel === 'FREE'
+          ? {
+              aiTokens: { decrement: 1 },
+              lastTokenUpdate:
+                user.aiTokens === 5
+                  ? new Date()
+                  : (user.lastTokenUpdate ?? new Date()),
+            }
+          : {}),
+      },
+    });
+
+    console.log('✅ Métricas atualizadas para userId:', userId);
+    // 🔍 FIM DEBUG
+
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : '';
+    console.error('❌ Erro no orquestrador:', errorMessage); // DEBUG
+    if (errorMessage.includes('429') || errorMessage.includes('rate_limit')) {
+      try {
+        const backupResult = await this.generalAgent.execute(
           userQuery,
           userMemoryContext,
+          true,
         );
         finalResult = {
-          text: result.answer,
-          agent: 'tourist',
-          model: 'llama-3.3-70b',
-          confidence: 0.95,
-        };
-      } else if (
-        forcedAgent === 'document_expert' ||
-        isDocRequest ||
-        (!forcedAgent && this.checkIfCulturalIntent(queryLower))
-      ) {
-        const vector = await this.hf.generateEmbedding(userQuery);
-        const culturalContext =
-          await this.llamaIndex.searchCulturalContext(vector);
-        const result = await this.docAgent.execute(
-          userQuery,
-          culturalContext,
-          userMemoryContext,
-        );
-
-        finalResult = {
-          text: result.answer,
-          sourceContext: culturalContext,
-          agent: 'document_expert',
-          model: 'llama-3.3-70b',
-          fileUrl: result.fileUrl,
-          fileName: result.fileName,
-          confidence: result.confidence,
-        };
-      } else {
-        const result = await this.generalAgent.execute(
-          userQuery,
-          userMemoryContext,
-        );
-        finalResult = {
-          text: result.answer,
-          agent: 'general',
+          text: backupResult.answer,
+          agent: 'groq_account_backup',
           model: 'llama-3.3-70b',
           confidence: 0.9,
+          isFallback: true,
         };
-      }
 
-      // Registo de log (Todos)
-      await this.prisma.activityLog.create({
-        data: { userId, type: 'CHAT_QUERY' },
-      });
+        await this.prisma.activityLog.create({
+          data: { userId, type: 'CHAT_QUERY' },
+        });
 
-      // Atualização de métricas (Todos)
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          totalTokensUsed: { increment: 1 },
-          aiInteractions: { increment: 1 },
-          // Atualização de tokens (Apenas FREE)
-          ...(user.accessLevel === 'FREE'
-            ? {
-                aiTokens: { decrement: 1 },
-                lastTokenUpdate:
-                  user.aiTokens === 5
-                    ? new Date()
-                    : (user.lastTokenUpdate ?? new Date()),
-              }
-            : {}),
-        },
-      });
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : '';
-      if (errorMessage.includes('429') || errorMessage.includes('rate_limit')) {
-        try {
-          const backupResult = await this.generalAgent.execute(
-            userQuery,
-            userMemoryContext,
-            true,
-          );
-          finalResult = {
-            text: backupResult.answer,
-            agent: 'groq_account_backup',
-            model: 'llama-3.3-70b',
-            confidence: 0.9,
-            isFallback: true,
-          };
-
-          await this.prisma.activityLog.create({
-            data: { userId, type: 'CHAT_QUERY' },
-          });
-
-          await this.prisma.user.update({
-            where: { id: userId },
-            data: {
-              totalTokensUsed: { increment: 1 },
-              aiInteractions: { increment: 1 },
-              ...(user.accessLevel === 'FREE'
-                ? { aiTokens: { decrement: 1 } }
-                : {}),
-            },
-          });
-        } catch (backupError) {
-          throw new InternalServerErrorException(
-            'Muita carga no sistema. Tenta daqui a pouco!',
-          );
-        }
-      } else {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            totalTokensUsed: { increment: 1 },
+            aiInteractions: { increment: 1 },
+            ...(user.accessLevel === 'FREE'
+              ? { aiTokens: { decrement: 1 } }
+              : {}),
+          },
+        });
+      } catch (backupError) {
         throw new InternalServerErrorException(
-          'Erro no Orquestrador: ' + errorMessage,
+          'Muita carga no sistema. Tenta daqui a pouco!',
         );
       }
+    } else {
+      throw new InternalServerErrorException(
+        'Erro no Orquestrador: ' + errorMessage,
+      );
     }
-
-    this.memoryService
-      .updateMemory(userId, userQuery, finalResult.text, finalResult.agent)
-      .catch((err) => console.error('[Memory] Erro:', err));
-
-    return finalResult;
   }
+
+  this.memoryService
+    .updateMemory(userId, userQuery, finalResult.text, finalResult.agent)
+    .catch((err) => console.error('[Memory] Erro:', err));
+
+  return finalResult;
+}
   /**
    * Orquestra o fluxo de voz
    */

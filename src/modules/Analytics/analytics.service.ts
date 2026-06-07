@@ -37,68 +37,80 @@ export class AnalyticsService {
   /**
    * ✅ Retorna as estatísticas globais da turma (Performance Otimizada)
    */
-  async calculateClassGlobalStats(groupId?: string): Promise<ClassGlobalStatsDto> {
-    const where: Prisma.UserWhereInput = { role: Role.STUDENT };
-    if (groupId) { where.groupId = groupId; }
+async calculateClassGlobalStats(groupId?: string): Promise<ClassGlobalStatsDto> {
+  const where: Prisma.UserWhereInput = { role: Role.STUDENT };
+  if (groupId) { where.groupId = groupId; }
 
-    // 1. Busca os estudantes
-    const students = await this.prisma.user.findMany({
-      where,
-      include: { lessonProgress: true },
-    });
+  const students = await this.prisma.user.findMany({
+    where,
+    include: { lessonProgress: true },
+  });
 
-    // CRÍTICO: Extrair os IDs para filtrar apenas os logs destes alunos
-    const studentIds = students.map(s => s.id);
+  const studentIds = students.map(s => s.id);
 
-    // 2. Busca logs APENAS destes estudantes (Performance e Precisão)
-    const logs = await this.prisma.activityLog.groupBy({
-      by: ['userId', 'type'],
-      where: { 
-        userId: { in: studentIds }, // Filtro obrigatório aqui
-        type: { in: ['SEARCH_WORD', 'CHAT_QUERY'] } 
-      },
-      _count: true,
-    });
+  // 🔍 DEBUG TEMPORÁRIO
+  const rawCount = await this.prisma.activityLog.count({
+    where: { type: 'CHAT_QUERY' }
+  });
 
-    // 3. Helper de busca rápida
-  const getCount = (userId: string, type: 'SEARCH_WORD' | 'CHAT_QUERY') => {
-  return logs.find(l => {
-    // Converte o ID do log para string para comparar com o ID do aluno
-    const logUserId = l.userId.toString(); 
-    return logUserId === userId && l.type === type;
-  })?._count || 0;
-};
 
-    // 4. Mapeia e calcula pontuação
-    let processedStudents = students.map((s) => {
-      const aiCount = getCount(s.id, 'CHAT_QUERY');
-      const vocabCount = getCount(s.id, 'SEARCH_WORD');
-      const completedLessons = s.lessonProgress?.filter((p) => p.completed).length || 0;
-      const totalLessons = s.lessonProgress?.length || 0;
+  const logs = await this.prisma.activityLog.findMany({
+    where: {
+      userId: { in: studentIds },
+      type: { in: ['SEARCH_WORD', 'CHAT_QUERY'] },
+    },
+    select: {
+      userId: true,
+      type: true,
+    },
+  });
 
-      return {
-        id: s.id,
-        name: s.name,
-        xp: s.xp || 0,
-        streak: s.streak || 0,
-        successRate: totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0,
-        wordsMastered: vocabCount,
-        aiInteractions: aiCount,
-        activityScore: aiCount + vocabCount 
-      };
-    });
 
-    // 5. Ordena pelo activityScore
-    processedStudents.sort((a, b) => b.activityScore - a.activityScore);
 
-    // 6. Pega apenas os 15 melhores
-    const topStudents = processedStudents.slice(0, 15);
+  const logMap = new Map<string, { SEARCH_WORD: number; CHAT_QUERY: number }>();
+
+  for (const log of logs) {
+    const uid = log.userId.toString();
+    if (!logMap.has(uid)) {
+      logMap.set(uid, { SEARCH_WORD: 0, CHAT_QUERY: 0 });
+    }
+    const entry = logMap.get(uid)!;
+    if (log.type === 'SEARCH_WORD') entry.SEARCH_WORD++;
+    if (log.type === 'CHAT_QUERY') entry.CHAT_QUERY++;
+  }
+
+  const getCount = (userId: string, type: 'SEARCH_WORD' | 'CHAT_QUERY'): number => {
+    return logMap.get(userId.toString())?.[type] || 0;
+  };
+
+  let processedStudents = students.map((s) => {
+    const aiCount = getCount(s.id, 'CHAT_QUERY');
+    const vocabCount = getCount(s.id, 'SEARCH_WORD');
+    const completedLessons = s.lessonProgress?.filter((p) => p.completed).length || 0;
+    const totalLessons = s.lessonProgress?.length || 0;
 
     return {
-      totalStudents: students.length,
-      averageXp: students.length > 0 ? students.reduce((acc, curr) => acc + curr.xp, 0) / students.length : 0,
-      mostDifficultLesson: 'Lição 3.2 - Verbos Complexos',
-      topStudents: topStudents,
+      id: s.id,
+      name: s.name,
+      xp: s.xp || 0,
+      streak: s.streak || 0,
+      successRate: totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0,
+      wordsMastered: vocabCount,
+      aiInteractions: aiCount,
+      activityScore: aiCount + vocabCount,
     };
-  }
+  });
+
+  processedStudents.sort((a, b) => b.activityScore - a.activityScore);
+  const topStudents = processedStudents.slice(0, 15);
+
+  return {
+    totalStudents: students.length,
+    averageXp: students.length > 0
+      ? students.reduce((acc, curr) => acc + curr.xp, 0) / students.length
+      : 0,
+    mostDifficultLesson: 'Lição 3.2 - Verbos Complexos',
+    topStudents,
+  };
+}
 }
