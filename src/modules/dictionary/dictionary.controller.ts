@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Req,
   Patch,
   Delete,
   Body,
@@ -100,9 +101,16 @@ export class DictionaryController {
    * 🔍 BUSCAR ESPECÍFICA (Por termo exato)
    * Útil para quando clicamos num Link Cruzado direto
    */
-  @Get('search/:term')
-  async getOne(@Param('term') term: string) {
-    const word = await this.dictionaryService.findByTerm(term);
+@Get('search/:term')
+  async getOne(
+    @Param('term') term: string, 
+    @Req() req: any // 👈 Injeta a requisição aqui
+  ) {
+    // Agora podes aceder ao ID do user logado
+    const userId = req.user.id; 
+    
+    const word = await this.dictionaryService.findByTerm(term, userId);
+    
     if (!word) {
       throw new NotFoundException('Palavra não encontrada.');
     }

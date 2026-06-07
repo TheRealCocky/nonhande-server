@@ -223,15 +223,12 @@ export class DictionaryService {
   /**
    * 4. FIND BY TERM: Cache para páginas individuais
    */
- async findByTerm(term: string) {
+async findByTerm(term: string, userId: string) { // <--- 1. Adiciona userId aqui
     const cacheKey = `term_${term.toLowerCase()}`;
 
-    // 1. Tenta buscar no cache
     let word = await this.cacheManager.get(cacheKey) as any;
 
-    // 2. Se não estiver no cache, busca no banco
     if (!word) {
-      // Tenta busca EXATA, depois INÍCIO, depois CONTÉM
       word = await this.prisma.word.findFirst({
         where: { term: { equals: term, mode: 'insensitive' } },
         include: { examples: true },
@@ -244,18 +241,25 @@ export class DictionaryService {
       });
     }
 
-    // 3. Se encontrou (ou no cache ou no banco), incrementa e atualiza
     if (word) {
-      // Incrementa no banco de dados
+      // Incrementa no banco de dados (Global)
       await this.prisma.word.update({
         where: { id: word.id },
         data: { queryCount: { increment: 1 } }
       });
 
-      // Atualiza o objeto localmente para refletir o novo valor
-      word.queryCount += 1;
+      // --- AQUI ESTÁ A MÁGICA ---
+      // Regista o evento para o Analytics individual
+      await this.prisma.activityLog.create({
+        data: {
+          userId: userId, // ID do estudante
+          type: 'SEARCH_WORD',
+          entityId: word.id // ID da palavra pesquisada
+        }
+      });
+      // --------------------------
 
-      // Atualiza o cache com o contador novo
+      word.queryCount += 1;
       await this.cacheManager.set(cacheKey, word);
     }
 

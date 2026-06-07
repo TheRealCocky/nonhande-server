@@ -69,8 +69,7 @@ export class AiOrchestratorService {
     }
     return user;
   }
-//resposta inteligencia artificial
-  async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string): Promise<SmartResponse> {
+async getSmartResponse(userQuery: string, userId: string, forcedAgent?: string): Promise<SmartResponse> {
     const initialUser = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!initialUser) throw new NotFoundException('Mestre não encontrado.');
 
@@ -119,6 +118,11 @@ export class AiOrchestratorService {
         finalResult = { text: result.answer, agent: 'general', model: 'llama-3.3-70b', confidence: 0.90 };
       }
 
+      // Registo de atividade (Sucesso Principal)
+      await this.prisma.activityLog.create({
+        data: { userId, type: 'CHAT_QUERY' }
+      });
+
       if (user.accessLevel === 'FREE') {
         await this.prisma.user.update({
           where: { id: userId },
@@ -137,6 +141,11 @@ export class AiOrchestratorService {
         try {
           const backupResult = await this.generalAgent.execute(userQuery, userMemoryContext, true);
           finalResult = { text: backupResult.answer, agent: 'groq_account_backup', model: 'llama-3.3-70b', confidence: 0.90, isFallback: true };
+
+          // Registo de atividade (Fallback/Backup)
+          await this.prisma.activityLog.create({
+            data: { userId, type: 'CHAT_QUERY' }
+          });
 
           if (user.accessLevel === 'FREE') {
             await this.prisma.user.update({
@@ -158,7 +167,6 @@ export class AiOrchestratorService {
 
     return finalResult;
   }
-
   /**
    * Orquestra o fluxo de voz
    */
