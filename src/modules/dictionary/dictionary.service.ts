@@ -223,51 +223,39 @@ export class DictionaryService {
   /**
    * 4. FIND BY TERM: Cache para páginas individuais
    */
-  async findByTerm(term: string) {
+ async findByTerm(term: string) {
     const cacheKey = `term_${term.toLowerCase()}`;
 
-    // 1. Tenta pegar do Cache primeiro
-    const cached = await this.cacheManager.get(cacheKey);
-    if (cached) return cached;
+    // 1. Tenta buscar no cache
+    let word = await this.cacheManager.get(cacheKey) as any;
 
-    // 2. Tenta busca EXATA (Ex: "Otupya")
-    let word = await this.prisma.word.findFirst({
-      where: { term: { equals: term, mode: 'insensitive' } },
-      include: { examples: true },
-    });
-
-    // 3. Se não encontrou, tenta por INÍCIO (Ex: "Otupya (singular) / Omatupya")
+    // 2. Se não estiver no cache, busca no banco
     if (!word) {
+      // Tenta busca EXATA, depois INÍCIO, depois CONTÉM
       word = await this.prisma.word.findFirst({
-        where: {
-          term: {
-            startsWith: term,
-            mode: 'insensitive'
-          }
-        },
+        where: { term: { equals: term, mode: 'insensitive' } },
+        include: { examples: true },
+      }) || await this.prisma.word.findFirst({
+        where: { term: { startsWith: term, mode: 'insensitive' } },
+        include: { examples: true },
+      }) || await this.prisma.word.findFirst({
+        where: { term: { contains: term, mode: 'insensitive' } },
         include: { examples: true },
       });
     }
 
-    // 4. Se ainda não encontrou, tenta se CONTÉM (Plano C)
-    if (!word) {
-      word = await this.prisma.word.findFirst({
-        where: {
-          term: {
-            contains: term,
-            mode: 'insensitive'
-          }
-        },
-        include: { examples: true },
-      });
-    }
-
-    // 5. Salva no cache se encontrou alguma coisa e actualiza cada palavra consultada para ter um contador de consultas
+    // 3. Se encontrou (ou no cache ou no banco), incrementa e atualiza
     if (word) {
+      // Incrementa no banco de dados
       await this.prisma.word.update({
         where: { id: word.id },
-        data: { queryCount: {increment: 1}}
+        data: { queryCount: { increment: 1 } }
       });
+
+      // Atualiza o objeto localmente para refletir o novo valor
+      word.queryCount += 1;
+
+      // Atualiza o cache com o contador novo
       await this.cacheManager.set(cacheKey, word);
     }
 
