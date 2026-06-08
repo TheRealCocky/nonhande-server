@@ -23,22 +23,22 @@ export class GroqStrategy {
   }
 
   async getChatCompletion(
-    prompt: string,
-    systemInstruction: string,
-    useBackup = false
-  ): Promise<string> {
-    const client = (useBackup && this.groqBackup) ? this.groqBackup : this.groqPrimary;
+  userPrompt: string,      // Isto vem do GENERAL_USER_PROMPT
+  systemInstruction: string, // Isto é o GENERAL_SYSTEM_INSTRUCTION
+  useBackup = false
+): Promise<string> {
+  const client = (useBackup && this.groqBackup) ? this.groqBackup : this.groqPrimary;
 
-    const completion = await client.chat.completions.create({
-      messages: [
-        { role: 'system', content: systemInstruction },
-        { role: 'user', content: prompt },
-      ],
-      model: 'llama-3.3-70b-versatile',
-      temperature: 0.2,
-      max_tokens: 1024,
-    });
+  const completion = await client.chat.completions.create({
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: userPrompt }, // O contexto e a pergunta vêm aqui
+    ],
+    model: 'llama-3.1-8b-instant',
+    temperature: 0,
+    max_tokens: 1024,
+  });
 
-    return completion.choices[0]?.message?.content || 'Sem resposta do oráculo.';
-  }
+  return completion.choices[0]?.message?.content || 'Sem resposta do oráculo.';
+}
 }

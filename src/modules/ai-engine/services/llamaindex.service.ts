@@ -23,13 +23,15 @@ export class LlamaIndexService implements OnModuleInit {
     const dbName = process.env.DB_NAME;
     const collName = process.env.DB_COLLECTIONAI;
 
+    // Guardião de configuração
     if (!dbName || !collName) {
       throw new InternalServerErrorException('Configurações de DB ausentes no .env');
     }
 
-    const db = this.client.db(dbName);
-    const collection = db.collection(collName);
+    const db = this.client.db(dbName!); // Fix: usamos ! para silenciar o TS
+    const collection = db.collection(collName!); // Fix: usamos !
 
+    // Pipeline SEM O $MATCH (que causava o erro de 0 resultados)
     const pipeline = [
       {
         $vectorSearch: {
@@ -37,19 +39,23 @@ export class LlamaIndexService implements OnModuleInit {
           path: "embedding",
           queryVector: queryVector,
           numCandidates: 100,
-          limit: 3,
+          limit: 3, 
         },
       },
       {
         $project: {
           _id: 0,
-          text: "$full_content",
-          score: { $meta: "vectorSearchScore" },
+          text: "$full_content", // Confirma que este campo existe mesmo na base
+          score: { $meta: "vectorSearchScore" }
         },
       },
     ];
 
-    const results = await collection.aggregate(pipeline).toArray();
+
+const results = await collection.aggregate(pipeline).toArray();
+
+    
+    // Retorno técnico
     return results.map(res => res.text).join('\n\n');
   }
 }
