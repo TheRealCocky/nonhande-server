@@ -90,11 +90,11 @@ export class AuthController {
     const authData = await this.authService.googleLogin(googleUser);
 
     const token = authData.accessToken;
-    const role = authData.user.role; // Pegamos o role que vem do service
+const role = authData.user.role;
+const userId = authData.user.id;      
 
-    // Enviamos AMBOS na URL
-    return res.redirect(
-      `${process.env.FRONTEND_URL}/auth/callback?token=${token}&role=${role}`
-    );
+   return res.redirect(
+  `${process.env.FRONTEND_URL}/auth/callback?token=${token}&role=${role}&userId=${userId}`
+);
   }
 }
