@@ -39,9 +39,9 @@ export class AiChatController {
     try {
       return await this.orchestrator.getSmartResponse(message, userId, agent);
     } catch (error) {
-      console.error('[AiChatController] Erro:', error);
-      throw new BadRequestException('A Nonhande teve um soluço técnico.');
-    }
+  console.error('[AiChatController] Erro COMPLETO:', error?.message, error?.stack);
+  throw new BadRequestException(error?.message || 'A Nonhande teve um soluço técnico.');
+}
   }
 
   /**
