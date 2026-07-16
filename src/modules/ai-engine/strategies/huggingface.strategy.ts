@@ -5,7 +5,7 @@ import * as process from 'node:process';
 export class HuggingFaceStrategy {
   private readonly hfToken = process.env.HF_TOKEN;
   private readonly modelId = 'intfloat/multilingual-e5-large';
-  private readonly whisperModel = 'therealcocky/whisper-nhaneka-humbe';
+  private readonly whisperModel = 'openai/whisper-large-v3';
 
   // 🎯 O Mistral 7B é o que menos falha no Router gratuito
   private readonly chatModel = 'mistralai/Mistral-7B-Instruct-v0.3';
